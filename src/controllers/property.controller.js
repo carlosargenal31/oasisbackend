@@ -4,22 +4,30 @@ import { asyncErrorHandler } from '../utils/errors/index.js';
 
 export class PropertyController {
   static createProperty = asyncErrorHandler(async (req, res) => {
-    // Obtener el archivo de imagen desde multer
-    const imageFile = req.file;
+    // Obtener los archivos de imagen desde multer
+    const files = req.files;
+    
+    // Imagen principal (si existe)
+    const mainImageFile = files?.image?.[0];
+    
+    // Imágenes adicionales (si existen)
+    const additionalImageFiles = files?.additional_images || [];
     
     const result = await PropertyService.createProperty(
       {
         ...req.body,
         host_id: req.userId
       },
-      imageFile
+      mainImageFile,
+      additionalImageFiles
     );
-
+  
     res.status(201).json({
       success: true,
       data: {
         propertyId: result.propertyId,
         imageUrl: result.imageUrl,
+        additionalImageUrls: result.additionalImageUrls || [],
         message: 'Propiedad creada exitosamente'
       }
     });
@@ -179,6 +187,80 @@ export class PropertyController {
     });
   });
 
+  /**
+ * Archivar una propiedad (ocultarla sin eliminarla)
+ */
+static archiveProperty = asyncErrorHandler(async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+  
+  await PropertyService.archiveProperty(
+    id,
+    { reason },
+    req.userId
+  );
+  
+  res.json({
+    success: true,
+    message: 'Propiedad archivada exitosamente'
+  });
+});
+
+/**
+ * Restaurar una propiedad archivada
+ */
+static restoreProperty = asyncErrorHandler(async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  
+  await PropertyService.restoreProperty(
+    id,
+    status || 'for-rent',
+    req.userId
+  );
+  
+  res.json({
+    success: true,
+    message: 'Propiedad restaurada exitosamente'
+  });
+});
+
+/**
+ * Obtener propiedades archivadas del usuario
+ */
+static getArchivedProperties = asyncErrorHandler(async (req, res) => {
+  const pagination = {
+    page: parseInt(req.query.page) || 1,
+    limit: parseInt(req.query.limit) || 10
+  };
+  
+  const result = await PropertyService.getArchivedProperties(
+    req.userId,
+    pagination
+  );
+  
+  res.json({
+    success: true,
+    data: result
+  });
+});
+
+/**
+ * Eliminación lógica de una propiedad
+ */
+static softDeleteProperty = asyncErrorHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  await PropertyService.softDeleteProperty(
+    id,
+    req.userId
+  );
+  
+  res.json({
+    success: true,
+    message: 'Propiedad eliminada exitosamente (borrado lógico)'
+  });
+});
   /**
    * Incrementa el contador de vistas de una propiedad
    */

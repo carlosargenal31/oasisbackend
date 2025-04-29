@@ -1,4 +1,6 @@
 // src/middleware/property.middleware.js
+import { ValidationError } from '../utils/errors/index.js';
+
 export const validatePropertyData = (req, res, next) => {
   const { title, description, address, city, price, property_type } = req.body;
 
@@ -19,7 +21,7 @@ export const validatePropertyData = (req, res, next) => {
     throw new ValidationError('El precio debe ser un número positivo');
   }
 
-  const validTypes = ['house', 'apartment', 'commercial'];
+  const validTypes = ['house', 'apartment', 'room', 'office', 'commercial', 'land', 'daily-rental', 'new-building', 'parking-lot'];
   if (!validTypes.includes(property_type)) {
     throw new ValidationError(`Tipo de propiedad inválido. Debe ser uno de: ${validTypes.join(', ')}`);
   }

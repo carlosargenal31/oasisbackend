@@ -1,6 +1,6 @@
 // src/middleware/auth.middleware.js
 import jwt from 'jsonwebtoken';
-import { ValidationError, AuthenticationError, AuthorizationError } from '../utils/errors/index.js';
+import { ValidationError, AuthenticationError } from '../utils/errors/index.js';
 
 export const authenticate = (req, res, next) => {
   // Permitir rutas de prueba sin autenticación en entorno de desarrollo
@@ -17,9 +17,8 @@ export const authenticate = (req, res, next) => {
   const token = authHeader.split(' ')[1];
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || '1234');
     req.userId = decoded.id;
-    req.userRole = decoded.role;
     next();
   } catch (error) {
     throw new AuthenticationError('Token inválido o expirado');
@@ -43,29 +42,14 @@ export const optionalAuth = (req, res, next) => {
   const token = authHeader.split(' ')[1];
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || '1234');
     req.userId = decoded.id;
-    req.userRole = decoded.role;
     next();
   } catch (error) {
     // Error de token - continuar como usuario no autenticado sin lanzar error
     console.warn('Token inválido en optionalAuth:', error.message);
     next();
   }
-};
-
-export const authorize = (roles = []) => {
-  return (req, res, next) => {
-    // Permitir rutas de prueba sin autorización en entorno de desarrollo
-    if (process.env.NODE_ENV === 'development' && req.path.startsWith('/api/test/')) {
-      return next();
-    }
-
-    if (!roles.includes(req.userRole)) {
-      throw new AuthorizationError('No tienes permisos para realizar esta acción');
-    }
-    next();
-  };
 };
 
 export const validateRegistrationData = (req, res, next) => {

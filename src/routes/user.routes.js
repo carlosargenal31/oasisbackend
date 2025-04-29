@@ -1,26 +1,40 @@
+// src/routes/user.routes.js
 import express from 'express';
-import { UserController } from '../controllers/user.controller.js';
+import multer from 'multer';
+
 import { validateUserData } from '../middleware/user.middleware.js';
-import { authenticate, authorize, validatePasswordChange } from '../middleware/auth.middleware.js'; // Add validatePasswordChange here
+import { authenticate, validatePasswordChange } from '../middleware/auth.middleware.js';
+import { UserController, updateProfileImage } from '../controllers/user.controller.js';
 
 const router = express.Router();
 
-// Admin routes
-router.post('/', authenticate, authorize(['admin']), validateUserData, UserController.createUser);
-router.get('/', authenticate, authorize(['admin']), UserController.getUsers);
-router.get('/role/:role', authenticate, authorize(['admin']), UserController.getUsersByRole);
+// Configuración de multer para manejar imágenes
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB máximo
+  fileFilter: (req, file, cb) => {
+    // Aceptar solo imágenes
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Solo se permiten imágenes'), false);
+    }
+  }
+});
 
-// Profile routes
+// Rutas de perfil - deben estar antes de las rutas con :id para evitar conflictos
 router.get('/profile', authenticate, UserController.getProfile);
-router.put('/profile', authenticate, validateUserData, UserController.updateProfile);
+router.put('/profile', authenticate, UserController.updateProfile);
 router.put('/password', authenticate, validatePasswordChange, UserController.updatePassword);
+router.post('/profile/image', authenticate, upload.single('image'), updateProfileImage);
 
-// Favorites routes
+// Rutas de favoritos
 router.get('/favorites', authenticate, UserController.getFavorites);
 router.post('/favorites/:propertyId', authenticate, UserController.addFavorite);
 router.delete('/favorites/:propertyId', authenticate, UserController.removeFavorite);
 
-// General user routes
+// Rutas generales de usuario - deben estar después para que no capturen /profile como :id
 router.get('/:id', authenticate, UserController.getUser);
 router.put('/:id', authenticate, validateUserData, UserController.updateUser);
 router.delete('/:id', authenticate, UserController.deleteUser);

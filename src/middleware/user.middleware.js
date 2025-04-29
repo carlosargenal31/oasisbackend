@@ -1,6 +1,8 @@
 // src/middleware/user.middleware.js
+import { ValidationError } from '../utils/errors/index.js';
+
 export const validateUserData = (req, res, next) => {
-  const { first_name, last_name, email, role } = req.body;
+  const { first_name, last_name, email } = req.body;
 
   const errors = [];
 
@@ -15,10 +17,6 @@ export const validateUserData = (req, res, next) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
     throw new ValidationError('Formato de email inválido');
-  }
-
-  if (role && !['guest', 'host', 'admin'].includes(role)) {
-    throw new ValidationError('Rol inválido. Debe ser: guest, host, o admin');
   }
 
   next();

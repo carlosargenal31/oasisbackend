@@ -32,9 +32,20 @@ router.get('/:id', PropertyController.getProperty);
 router.post('/:id/view', PropertyController.incrementPropertyViews); // Ruta para contador de vistas
 
 // Rutas protegidas
-router.post('/', authenticate, upload.single('image'), validatePropertyData, PropertyController.createProperty);
+router.post('/', authenticate, upload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'additional_images', maxCount: 10 }
+]), validatePropertyData, PropertyController.createProperty);
 router.put('/:id', authenticate, upload.single('image'), validatePropertyData, PropertyController.updateProperty);
 router.delete('/:id', authenticate, PropertyController.deleteProperty);
+
+// Rutas para archivar/restaurar propiedades (protegidas)
+router.patch('/:id/archive', authenticate, PropertyController.archiveProperty);
+router.patch('/:id/restore', authenticate, PropertyController.restoreProperty);
+router.delete('/:id/soft', authenticate, PropertyController.softDeleteProperty);
+
+// Ruta para obtener propiedades archivadas del usuario
+router.get('/user/archived', authenticate, PropertyController.getArchivedProperties);
 
 // Rutas para imágenes
 router.post('/:id/images', authenticate, upload.single('image'), PropertyController.addPropertyImage);

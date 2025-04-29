@@ -3,17 +3,23 @@ import { errorMiddleware } from './middleware/error.middleware.js';
 import { authenticate } from './middleware/auth.middleware.js';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { mysqlPool } from './config/database.js';
 import mongoose from 'mongoose';
 
+// Obtener el directorio actual
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Importar los modelos
-import { createUserTable } from './models/mysql/user.model.js';
+import { createUserTable} from './models/mysql/user.model.js';
 import { createAuthTable } from './models/mysql/auth.model.js';
 import { createPropertyTable } from './models/mysql/property.model.js';
 import { createPropertyAmenityTable } from './models/mysql/property-amenity.model.js';
 import { createPropertyPetTable } from './models/mysql/property-pet.model.js';
 import { createPropertyImageTable } from './models/mysql/property-image.model.js';
-import { createBookingTable } from './models/mysql/booking.model.js';
+import { Booking } from './models/mysql/booking.model.js';
 import { createReviewTable } from './models/mysql/review.model.js';
 import { createPaymentTable } from './models/mysql/payment.model.js';
 import { createFavoritesTable } from './models/mysql/favorites.model.js';
@@ -33,24 +39,30 @@ dotenv.config();
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Configurar directorio estático para servir archivos de uploads
+app.use('/uploads', express.static(path.join(__dirname, '..', 'public', 'uploads')));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Función para inicializar la base de datos
 const initDatabase = async () => {
   try {
     // Crear las tablas en orden de dependencias
     await createUserTable();
+
     await createAuthTable();
     
     // Crear tablas relacionadas con propiedades
     await createPropertyTable();
-    await createPropertyAmenityTable(); // Nueva tabla de amenidades
-    await createPropertyPetTable();     // Nueva tabla de mascotas permitidas
-    await createPropertyImageTable();   // Nueva tabla de imágenes adicionales
+    await createPropertyAmenityTable(); 
+    await createPropertyPetTable();     
+    await createPropertyImageTable();   
     
-    await createBookingTable();
+    await Booking.createTable();
     await createReviewTable();
     await createPaymentTable();
-    await createFavoritesTable(); // Asegúrate de crear esta tabla
+    await createFavoritesTable(); 
     
     console.log('All tables created successfully');
   } catch (error) {
@@ -68,10 +80,7 @@ app.get('/api/test', (req, res) => {
 
 // Rutas públicas (no requieren autenticación)
 app.use('/api/auth', authRoutes);
-app.use('/api/properties', propertyRoutes); // Cambio importante: montamos directamente en /api/properties
-
-// Aplicar middleware de autenticación a todas las rutas a partir de aquí
-// app.use('/api', authenticate); // Eliminamos esto para evitar doble autenticación
+app.use('/api/properties', propertyRoutes); 
 
 // Rutas protegidas (requieren autenticación)
 app.use('/api/users', userRoutes);
@@ -80,12 +89,36 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/messages', messageRoutes);
 
-// 404 error handler
-app.use((req, res, next) => {
+// Ruta para probar un usuario específico (solo para desarrollo)
+app.get('/api/dev/user/:id', async (req, res) => {
+  try {
+    const connection = await mysqlPool.getConnection();
+    const [users] = await connection.query('SELECT * FROM users WHERE id = ?', [req.params.id]);
+    connection.release();
+    
+    if (users.length === 0) {
+      return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+    }
+    
+    res.json({ success: true, data: users[0] });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ success: false, message: 'Error del servidor' });
+  }
+});
+
+// 404 error handler para API
+app.use('/api/*', (req, res) => {
   res.status(404).json({ 
-    success: false,
-    message: 'Route not found' 
+    successsuccess: false,
+    message: `Page not found: ${req.originalUrl}`
   });
+});
+
+// Para una aplicación Vue.js con Vue Router en modo history,
+// todas las demás rutas deben redirigirse al index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
 // Middleware de manejo de errores

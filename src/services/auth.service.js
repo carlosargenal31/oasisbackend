@@ -1,21 +1,15 @@
-/**
- * Authentication Service
- * Manages user authentication, registration, password reset, etc.
- */
+// src/services/auth.service.js
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { mysqlPool } from '../config/database.js';
-import config from '../config/index.js';
 import { ValidationError, AuthenticationError, NotFoundError, DatabaseError } from '../utils/errors/index.js';
-import logger from '../utils/logger.js';
 
 class AuthService {
-
   static async getUserById(userId) {
     try {
       const [users] = await mysqlPool.query(
-        `SELECT id, first_name, last_name, email, phone, role, created_at, updated_at 
+        `SELECT id, first_name, last_name, email, phone, status, profile_image, created_at, updated_at 
          FROM users WHERE id = ?`,
         [userId]
       );
@@ -27,20 +21,16 @@ class AuthService {
       return users[0];
     } catch (error) {
       console.error('Error getting user:', error);
-      if (error instanceof BaseError) {
+      if (error instanceof NotFoundError) {
         throw error;
       }
       throw new DatabaseError('Error al obtener usuario');
     }
   }
-  /**
-   * Register a new user
-   * @param {Object} userData - User registration data
-   * @returns {Promise<Object>} - The created user object (without password)
-   */
+
   async register(userData) {
     try {
-      // Validate email uniqueness
+      // Validar email uniqueness
       const [existingUsers] = await mysqlPool.query(
         'SELECT * FROM users WHERE email = ?',
         [userData.email]
@@ -58,17 +48,17 @@ class AuthService {
       await connection.beginTransaction();
   
       try {
-        // Create user (simplificado, sin tokens de verificación)
+        // Create user
         const [userResult] = await connection.query(
           `INSERT INTO users 
-           (first_name, last_name, email, role, created_at) 
-           VALUES (?, ?, ?, ?, ?)`,
+           (first_name, last_name, email, phone, status, created_at, updated_at) 
+           VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
           [
             userData.first_name,
             userData.last_name,
             userData.email,
-            userData.role || 'guest',
-            new Date()
+            userData.phone || null,
+            'active'
           ]
         );
   
@@ -105,7 +95,7 @@ class AuthService {
         throw error;
       }
     } catch (error) {
-      logger.error('User registration failed', { error, email: userData.email });
+      console.error('User registration failed', { error, email: userData.email });
       
       if (error instanceof ValidationError) {
         throw error;
@@ -115,14 +105,10 @@ class AuthService {
     }
   }
 
-  /**
-   * Login user with email and password
-   * @param {string} email - User email
-   * @param {string} password - User password
-   * @returns {Promise<Object>} - Authentication tokens and user data
-   */
   async login(email, password) {
     try {
+      console.log(`Attempting login with: ${email}`);
+      
       // Find user by email
       const [users] = await mysqlPool.query(
         'SELECT * FROM users WHERE email = ?',
@@ -130,25 +116,30 @@ class AuthService {
       );
   
       if (users.length === 0) {
+        console.log(`No user found with email: ${email}`);
         throw new AuthenticationError('Invalid email or password');
       }
   
       const user = users[0];
+      console.log(`Found user with ID: ${user.id}`);
   
       // Fetch password from auth_credentials
       const [authCredentials] = await mysqlPool.query(
-        'SELECT password FROM auth_credentials WHERE user_id = ?',
+        'SELECT * FROM auth_credentials WHERE user_id = ?',
         [user.id]
       );
   
       if (authCredentials.length === 0) {
+        console.log(`No auth credentials found for user ID: ${user.id}`);
         throw new AuthenticationError('No authentication credentials found');
       }
   
       // Verify password
       const isPasswordValid = await bcrypt.compare(password, authCredentials[0].password);
+      console.log(`Password validation result: ${isPasswordValid}`);
       
       if (!isPasswordValid) {
+        console.log('Password validation failed');
         throw new AuthenticationError('Invalid email or password');
       }
       
@@ -158,8 +149,8 @@ class AuthService {
 
       // Store refresh token in database
       await mysqlPool.query(
-        'UPDATE users SET refresh_token = ?, last_login = ? WHERE id = ?',
-        [refreshToken, new Date(), user.id]
+        'UPDATE users SET refresh_token = ?, last_login = NOW() WHERE id = ?',
+        [refreshToken, user.id]
       );
 
       // Remove sensitive data before returning
@@ -172,7 +163,7 @@ class AuthService {
         refreshToken
       };
     } catch (error) {
-      logger.error('Login failed', { error, email });
+      console.error('Login failed', { error, email });
       
       if (error instanceof AuthenticationError) {
         throw error;
@@ -182,11 +173,6 @@ class AuthService {
     }
   }
  
-  /**
-   * Logout user by invalidating refresh token
-   * @param {string} userId - User ID
-   * @returns {Promise<boolean>} - Success status
-   */
   async logout(userId) {
     try {
       // Clear refresh token in database
@@ -197,20 +183,15 @@ class AuthService {
       
       return true;
     } catch (error) {
-      logger.error('Logout failed', { error, userId });
+      console.error('Logout failed', { error, userId });
       throw new DatabaseError('Failed to process logout');
     }
   }
 
-  /**
-   * Refresh access token using refresh token
-   * @param {string} refreshToken - Refresh token
-   * @returns {Promise<Object>} - New access token
-   */
   async refreshToken(refreshToken) {
     try {
       // Verify refresh token
-      const decoded = jwt.verify(refreshToken, config.auth.refreshTokenSecret);
+      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || '1234');
       
       // Find user with the given refresh token
       const [users] = await mysqlPool.query(
@@ -231,16 +212,11 @@ class AuthService {
         accessToken: newAccessToken
       };
     } catch (error) {
-      logger.error('Token refresh failed', { error });
+      console.error('Token refresh failed', { error });
       throw new AuthenticationError('Invalid refresh token');
     }
   }
 
-  /**
-   * Request password reset - SIMPLIFICADO sin email
-   * @param {string} email - User email
-   * @returns {Promise<string>} - Reset token
-   */
   async requestPasswordReset(email) {
     try {
       // Find user by email
@@ -251,7 +227,7 @@ class AuthService {
 
       if (users.length === 0) {
         // Por seguridad, no revelar que el email no existe
-        logger.info('Password reset requested for non-existent email', { email });
+        console.info('Password reset requested for non-existent email', { email });
         throw new NotFoundError('User not found');
       }
 
@@ -271,17 +247,11 @@ class AuthService {
       // En vez de enviar email, devolvemos el token para pruebas
       return resetToken;
     } catch (error) {
-      logger.error('Password reset request failed', { error, email });
+      console.error('Password reset request failed', { error, email });
       throw new DatabaseError('Failed to process password reset request');
     }
   }
 
-  /**
-   * Reset password with token
-   * @param {string} token - Reset token
-   * @param {string} newPassword - New password
-   * @returns {Promise<boolean>} - Success status
-   */
   async resetPassword(token, newPassword) {
     try {
       // Find user with the given reset token
@@ -307,7 +277,7 @@ class AuthService {
       
       return true;
     } catch (error) {
-      logger.error('Password reset failed', { error, token });
+      console.error('Password reset failed', { error, token });
       
       if (error instanceof ValidationError) {
         throw error;
@@ -317,13 +287,6 @@ class AuthService {
     }
   }
 
-  /**
-   * Change password for authenticated user
-   * @param {string} userId - User ID
-   * @param {string} currentPassword - Current password
-   * @param {string} newPassword - New password
-   * @returns {Promise<boolean>} - Success status
-   */
   async changePassword(userId, currentPassword, newPassword) {
     try {
       // Find credentials by user ID
@@ -355,7 +318,7 @@ class AuthService {
       
       return true;
     } catch (error) {
-      logger.error('Password change failed', { error, userId });
+      console.error('Password change failed', { error, userId });
       
       if (error instanceof ValidationError || 
           error instanceof NotFoundError) {
@@ -366,50 +329,34 @@ class AuthService {
     }
   }
 
-  /**
-   * Generate JWT access token
-   * @param {Object} user - User object
-   * @returns {string} - JWT token
-   */
   generateAccessToken(user) {
     return jwt.sign(
       {
         id: user.id,
-        email: user.email,
-        role: user.role
+        email: user.email
       },
-      process.env.JWT_SECRET || 'your-secret-key',
+      process.env.JWT_SECRET || '1234',
       {
         expiresIn: process.env.JWT_EXPIRES_IN || '1d'
       }
     );
   }
 
-  /**
-   * Generate JWT refresh token
-   * @param {Object} user - User object
-   * @returns {string} - JWT token
-   */
   generateRefreshToken(user) {
     return jwt.sign(
       {
         id: user.id
       },
-      process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key',
+      process.env.JWT_REFRESH_SECRET || '1234',
       {
         expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d'
       }
     );
   }
 
-  /**
-   * Validate JWT token
-   * @param {string} token - JWT token
-   * @returns {Object} - Decoded token payload
-   */
   validateToken(token) {
     try {
-      return jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+      return jwt.verify(token, process.env.JWT_SECRET || '1234');
     } catch (error) {
       throw new AuthenticationError('Invalid token');
     }
