@@ -323,7 +323,7 @@ export class PropertyService {
           host_name: `${property.host_first_name || ''} ${property.host_last_name || ''}`.trim() || 'Anfitrión'
         };
         
-        // Obtener imágenes adicionales para cada propiedad
+        // Obtener imágenes adicionales para cada propiedad.
         const [images] = await connection.query(
           `SELECT image_url, is_primary FROM property_images WHERE property_id = ? ORDER BY is_primary DESC`,
           [property.id]
