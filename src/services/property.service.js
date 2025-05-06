@@ -173,16 +173,21 @@ export class PropertyService {
       let query = `
         SELECT p.*, 
                GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
-               GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
+               GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed,
+               u.first_name as host_first_name,
+               u.last_name as host_last_name,
+               u.profile_image as host_profile_image,
+               u.short_bio as host_bio
         FROM properties p
         LEFT JOIN property_amenities pa ON p.id = pa.property_id
         LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+        LEFT JOIN users u ON p.host_id = u.id
         WHERE 1=1
       `;
       
       const params = [];
-
-      // Filtro por status (for-rent o for-sale)
+  
+      // Aplicar todos los filtros existentes (el código de filtros se mantiene igual)
       if (filters.status) {
         query += ' AND p.status = ?';
         params.push(filters.status);
@@ -198,30 +203,30 @@ export class PropertyService {
           params.push(filters.property_type);
         }
       }
-
+  
       // Filtros de precio
       if (filters.minPrice) {
         query += ' AND p.price >= ?';
         params.push(parseFloat(filters.minPrice));
       }
-
+  
       if (filters.maxPrice) {
         query += ' AND p.price <= ?';
         params.push(parseFloat(filters.maxPrice));
       }
-
+  
       // Filtros de ubicación
       if (filters.city) {
         query += ' AND p.city LIKE ?';
         params.push(`%${filters.city}%`);
       }
-
+  
       // Filtros de características
       if (filters.minBedrooms) {
         query += ' AND p.bedrooms >= ?';
         params.push(parseInt(filters.minBedrooms));
       }
-
+  
       if (filters.minBathrooms) {
         query += ' AND p.bathrooms >= ?';
         params.push(parseFloat(filters.minBathrooms));
@@ -277,7 +282,7 @@ export class PropertyService {
         )`;
         params.push(...filters.pets, filters.pets.length);
       }
-
+  
       // Agrupar por ID de propiedad para evitar duplicados por los JOIN
       query += ' GROUP BY p.id';
       
@@ -285,36 +290,85 @@ export class PropertyService {
       query += ' ORDER BY p.created_at DESC';
       
       // Paginación
+      let paginationParams = [];
       if (filters.page && filters.limit) {
         const offset = (parseInt(filters.page) - 1) * parseInt(filters.limit);
         query += ' LIMIT ? OFFSET ?';
-        params.push(parseInt(filters.limit), offset);
+        paginationParams = [parseInt(filters.limit), offset];
       }
-
+  
       // Ejecutar la consulta
-      const [properties] = await connection.query(query, params)
-        .catch(error => {
-          console.error('Error al obtener propiedades:', error);
-          throw new DatabaseError('Error al obtener las propiedades');
-        });
-
-      // Procesar los resultados
-      const processedProperties = properties.map(property => {
-        // Convertir las cadenas de amenidades y mascotas permitidas en arrays
-        return {
-          ...property,
-          amenities: property.amenities ? property.amenities.split(',') : [],
-          pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : []
-        };
+      const [properties] = await connection.query(
+        query, 
+        [...params, ...paginationParams]
+      ).catch(error => {
+        console.error('Error al obtener propiedades:', error);
+        throw new DatabaseError('Error al obtener las propiedades');
       });
-      
+  
       // Obtener el total de propiedades (sin LIMIT)
       let countQuery = query.replace(/SELECT p\.\*,[\s\S]*?FROM/, 'SELECT COUNT(DISTINCT p.id) as total FROM');
       countQuery = countQuery.replace(/GROUP BY p\.id[\s\S]*$/, '');
       
-      const [totalResult] = await connection.query(countQuery, params.slice(0, -2));
+      const [totalResult] = await connection.query(countQuery, params);
       const total = totalResult[0]?.total || 0;
-
+  
+      // Procesar las propiedades con datos adicionales
+      const processedProperties = await Promise.all(properties.map(async property => {
+        // Procesar datos base
+        const processedProperty = {
+          ...property,
+          amenities: property.amenities ? property.amenities.split(',') : [],
+          pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : [],
+          host_name: `${property.host_first_name || ''} ${property.host_last_name || ''}`.trim() || 'Anfitrión'
+        };
+        
+        // Obtener imágenes adicionales para cada propiedad
+        const [images] = await connection.query(
+          `SELECT image_url, is_primary FROM property_images WHERE property_id = ? ORDER BY is_primary DESC`,
+          [property.id]
+        ).catch(error => {
+          console.error(`Error al obtener imágenes para propiedad ${property.id}:`, error);
+          return [[]]; // Retornar un array vacío en caso de error
+        });
+        
+        if (images && images.length > 0) {
+          processedProperty.additional_images = images.map(img => img.image_url);
+        } else {
+          processedProperty.additional_images = [];
+        }
+        
+        // Obtener calificación promedio del anfitrión
+        const [hostRating] = await connection.query(
+          `SELECT AVG(r.rating) as host_average_rating
+           FROM reviews r
+           JOIN properties p ON r.property_id = p.id
+           WHERE p.host_id = ?`,
+          [property.host_id]
+        ).catch(error => {
+          console.error(`Error al obtener calificación del anfitrión ${property.host_id}:`, error);
+          return [[{ host_average_rating: 0 }]];
+        });
+        
+        processedProperty.host_average_rating = hostRating[0]?.host_average_rating || 0;
+        
+        // Obtener conteo de reseñas del anfitrión
+        const [hostReviews] = await connection.query(
+          `SELECT COUNT(*) as host_review_count
+           FROM reviews r
+           JOIN properties p ON r.property_id = p.id
+           WHERE p.host_id = ?`,
+          [property.host_id]
+        ).catch(error => {
+          console.error(`Error al obtener conteo de reseñas del anfitrión ${property.host_id}:`, error);
+          return [[{ host_review_count: 0 }]];
+        });
+        
+        processedProperty.host_review_count = hostReviews[0]?.host_review_count || 0;
+        
+        return processedProperty;
+      }));
+  
       return {
         properties: processedProperties,
         total
