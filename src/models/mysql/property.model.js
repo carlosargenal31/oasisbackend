@@ -279,8 +279,8 @@ export class Property {
       // Agrupar por ID de propiedad para evitar duplicados por los JOIN
       query += ' GROUP BY p.id';
       
-      // Ordenación
-      query += ' ORDER BY p.created_at DESC';
+      // Ordenación - primero las destacadas (1), luego todas las demás (0 o NULL)
+      query += ' ORDER BY CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
       
       // Paginación
       if (pagination.limit) {

@@ -1183,4 +1183,90 @@ export class PropertyService {
       throw new DatabaseError('Error al obtener propiedades populares');
     }
   }
+
+  static async getAllProperties(filters = {}) {
+    try {
+      // Eliminar filtros de price si existen
+      const adjustedFilters = {...filters};
+      if (adjustedFilters.minPrice) delete adjustedFilters.minPrice;
+      if (adjustedFilters.maxPrice) delete adjustedFilters.maxPrice;
+      
+      // Usar el método del modelo para obtener todas las propiedades sin límite
+      const { properties, total } = await Property.findAll(adjustedFilters, { limit: null, offset: 0 });
+      
+      // Añadir información de host y otras mejoras a cada propiedad
+      const connection = await mysqlPool.getConnection();
+      const enhancedProperties = await Promise.all(properties.map(async property => {
+        // Añadir información básica del host si existe
+        if (property.host_id) {
+          try {
+            const [hostData] = await connection.query(
+              `SELECT first_name, last_name, profile_image, short_bio 
+               FROM users 
+               WHERE id = ?`,
+              [property.host_id]
+            );
+            
+            if (hostData && hostData.length > 0) {
+              property.host_first_name = hostData[0].first_name;
+              property.host_last_name = hostData[0].last_name;
+              property.host_profile_image = hostData[0].profile_image;
+              property.host_bio = hostData[0].short_bio;
+              property.host_name = `${hostData[0].first_name || ''} ${hostData[0].last_name || ''}`.trim() || 'Anfitrión';
+            }
+          } catch (error) {
+            console.error(`Error al obtener datos del host para propiedad ${property.id}:`, error);
+          }
+        }
+        
+        // Obtener calificación promedio del anfitrión
+        try {
+          const [hostRating] = await connection.query(
+            `SELECT AVG(r.rating) as host_average_rating
+             FROM reviews r
+             JOIN properties p ON r.property_id = p.id
+             WHERE p.host_id = ?`,
+            [property.host_id]
+          );
+          
+          if (hostRating && hostRating.length > 0) {
+            property.host_average_rating = hostRating[0].host_average_rating || 0;
+          }
+        } catch (error) {
+          console.error(`Error al obtener calificación del anfitrión ${property.host_id}:`, error);
+          property.host_average_rating = 0;
+        }
+        
+        // Obtener conteo de reseñas del anfitrión
+        try {
+          const [hostReviews] = await connection.query(
+            `SELECT COUNT(*) as host_review_count
+             FROM reviews r
+             JOIN properties p ON r.property_id = p.id
+             WHERE p.host_id = ?`,
+            [property.host_id]
+          );
+          
+          if (hostReviews && hostReviews.length > 0) {
+            property.host_review_count = hostReviews[0].host_review_count || 0;
+          }
+        } catch (error) {
+          console.error(`Error al obtener conteo de reseñas del anfitrión ${property.host_id}:`, error);
+          property.host_review_count = 0;
+        }
+        
+        return property;
+      }));
+      
+      connection.release();
+      
+      return {
+        properties: enhancedProperties,
+        total
+      };
+    } catch (error) {
+      console.error('Error en getAllProperties:', error);
+      throw error;
+    }
+  }
 }

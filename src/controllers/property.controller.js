@@ -367,4 +367,34 @@ export class PropertyController {
       message: `Propiedad ${verified ? 'verificada' : 'quitada de verificación'} exitosamente`
     });
   });
+
+  static getAllProperties = asyncErrorHandler(async (req, res) => {
+    const filters = {
+      status: req.query.status,
+      property_type: req.query.property_type,
+      city: req.query.city,
+      minPrice: req.query.minPrice,
+      maxPrice: req.query.maxPrice,
+      minBedrooms: req.query.minBedrooms,
+      minBathrooms: req.query.minBathrooms,
+      host_id: req.query.host_id,
+      minArea: req.query.minArea,
+      maxArea: req.query.maxArea,
+      verified: req.query.verified === 'true',
+      featured: req.query.featured === 'true',
+      amenities: req.query.amenities ? 
+        (Array.isArray(req.query.amenities) ? req.query.amenities : [req.query.amenities]) 
+        : null,
+      pets: req.query.pets ? 
+        (Array.isArray(req.query.pets) ? req.query.pets : [req.query.pets]) 
+        : null
+    };
+  
+    const result = await PropertyService.getAllProperties(filters);
+    
+    res.json({
+      success: true,
+      data: result
+    });
+  });
 }

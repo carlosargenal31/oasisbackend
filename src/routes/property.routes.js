@@ -24,6 +24,7 @@ const upload = multer({
 
 // Rutas públicas
 router.get('/', PropertyController.getProperties);
+router.get('/all', PropertyController.getAllProperties);
 router.get('/search', PropertyController.searchProperties);
 router.get('/featured', PropertyController.getFeaturedProperties);
 router.get('/recent', PropertyController.getRecentProperties);
