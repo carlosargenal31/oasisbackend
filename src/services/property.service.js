@@ -1269,4 +1269,97 @@ export class PropertyService {
       throw error;
     }
   }
+
+  static async getPropertiesByMainCategories(category = null, pagination = { page: 1, limit: 10 }) {
+    try {
+      const filters = {};
+      
+      // Si se proporciona una categoría específica, filtrar por ella
+      if (category) {
+        filters.category = category;
+      } else {
+        // Si no se proporciona categoría, filtramos por las tres principales
+        filters.categoryList = ['Restaurante y bar', 'Alojamiento', 'Entretenimiento'];
+      }
+      
+      // Calcular offset para paginación
+      const limit = parseInt(pagination.limit);
+      const offset = (parseInt(pagination.page) - 1) * limit;
+      
+      const connection = await mysqlPool.getConnection();
+      
+      let query = `
+        SELECT p.*, 
+               GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
+               GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
+        FROM properties p
+        LEFT JOIN property_amenities pa ON p.id = pa.property_id
+        LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+        WHERE (p.archived IS NULL OR p.archived = FALSE)
+      `;
+      
+      const queryParams = [];
+      
+      // Aplicar filtro de categoría
+      if (category) {
+        query += ' AND p.category = ?';
+        queryParams.push(category);
+      } else if (filters.categoryList) {
+        query += ` AND p.category IN (${filters.categoryList.map(() => '?').join(',')})`;
+        queryParams.push(...filters.categoryList);
+      }
+      
+      // Agrupar y ordenar
+      query += ' GROUP BY p.id';
+      query += ' ORDER BY CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
+      
+      // Aplicar paginación
+      query += ' LIMIT ? OFFSET ?';
+      queryParams.push(limit, offset);
+      
+      // Ejecutar consulta
+      const [properties] = await connection.query(query, queryParams);
+      
+      // Consulta para obtener el total
+      let countQuery = `
+        SELECT COUNT(DISTINCT p.id) as total 
+        FROM properties p
+        WHERE (p.archived IS NULL OR p.archived = FALSE)
+      `;
+      
+      const countParams = [];
+      
+      if (category) {
+        countQuery += ' AND p.category = ?';
+        countParams.push(category);
+      } else if (filters.categoryList) {
+        countQuery += ` AND p.category IN (${filters.categoryList.map(() => '?').join(',')})`;
+        countParams.push(...filters.categoryList);
+      }
+      
+      const [countResult] = await connection.query(countQuery, countParams);
+      const total = countResult[0]?.total || 0;
+      
+      connection.release();
+      
+      // Procesar propiedades
+      const processedProperties = properties.map(property => ({
+        ...property,
+        amenities: property.amenities ? property.amenities.split(',') : [],
+        pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : []
+      }));
+      
+      return {
+        properties: processedProperties,
+        total,
+        page: parseInt(pagination.page),
+        limit,
+        totalPages: Math.ceil(total / limit)
+      };
+    } catch (error) {
+      console.error('Error al obtener propiedades por categorías principales:', error);
+      throw error;
+    }
+  }
+  
 }

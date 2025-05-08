@@ -397,4 +397,48 @@ export class PropertyController {
       data: result
     });
   });
+
+  static getMainCategories = asyncErrorHandler(async (req, res) => {
+    const pagination = {
+      page: parseInt(req.query.page) || 1,
+      limit: parseInt(req.query.limit) || 10
+    };
+    
+    const result = await PropertyService.getPropertiesByMainCategories(
+      null, // Sin filtro de categoría específica
+      pagination
+    );
+    
+    res.json({
+      success: true,
+      data: result
+    });
+  });
+  
+  static getPropertiesByCategory = asyncErrorHandler(async (req, res) => {
+    const { category } = req.params;
+    const pagination = {
+      page: parseInt(req.query.page) || 1,
+      limit: parseInt(req.query.limit) || 10
+    };
+    
+    // Validar que la categoría sea una de las principales
+    const mainCategories = ['Restaurante y bar', 'Alojamiento', 'Entretenimiento'];
+    if (!mainCategories.includes(category)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Categoría no válida. Debe ser una de: ' + mainCategories.join(', ')
+      });
+    }
+    
+    const result = await PropertyService.getPropertiesByMainCategories(
+      category,
+      pagination
+    );
+    
+    res.json({
+      success: true,
+      data: result
+    });
+  });
 }
