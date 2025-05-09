@@ -61,89 +61,105 @@ export class Blog {
   }
   
   // Obtener todos los blogs con opciones de filtro
-  static async findAll(filters = {}) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      let query = `
-        SELECT b.*, u.first_name, u.last_name, u.profile_image 
-        FROM blogs b
-        JOIN users u ON b.author_id = u.id
-        WHERE 1=1
-      `;
-      
-      const params = [];
-      
-      // Filtrar por categoría
-      if (filters.category) {
-        query += ' AND b.category = ?';
-        params.push(filters.category);
-      }
-      
-      // Filtrar por autor
-      if (filters.author_id) {
-        query += ' AND b.author_id = ?';
-        params.push(filters.author_id);
-      }
-      
-      // Filtrar por is_featured
-      if (filters.featured !== undefined) {
-        query += ' AND b.is_featured = ?';
-        params.push(filters.featured ? 1 : 0);
-      }
-      
-      // Búsqueda por término
-      if (filters.search) {
-        query += ' AND (b.title LIKE ? OR b.content LIKE ?)';
-        const searchTerm = `%${filters.search}%`;
-        params.push(searchTerm, searchTerm);
-      }
-      
-      // Ordenamiento por destacados primero, luego por fecha
-      query += ' ORDER BY b.is_featured DESC, b.published_at DESC';
-      
-      // Paginación
-      if (filters.limit) {
-        query += ' LIMIT ?';
-        params.push(parseInt(filters.limit));
-        
-        if (filters.offset) {
-          query += ' OFFSET ?';
-          params.push(parseInt(filters.offset));
-        }
-      }
-      
-      const [blogs] = await connection.query(query, params);
-      
-      connection.release();
-      return blogs;
-    } catch (error) {
-      console.error('Error finding all blogs:', error);
-      throw error;
+  // Modificación en el método findAll de la clase Blog en blog.model.js
+static async findAll(filters = {}) {
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    let query = `
+      SELECT b.*, u.first_name, u.last_name, u.profile_image 
+      FROM blogs b
+      JOIN users u ON b.author_id = u.id
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    
+    // Filtrar por categoría
+    if (filters.category) {
+      query += ' AND b.category = ?';
+      params.push(filters.category);
     }
+    
+    // Filtrar por autor
+    if (filters.author_id) {
+      query += ' AND b.author_id = ?';
+      params.push(filters.author_id);
+    }
+    
+    // Filtrar por is_featured
+    if (filters.featured !== undefined) {
+      query += ' AND b.is_featured = ?';
+      params.push(filters.featured ? 1 : 0);
+    }
+    
+    // Búsqueda por término
+    if (filters.search) {
+      query += ' AND (b.title LIKE ? OR b.content LIKE ?)';
+      const searchTerm = `%${filters.search}%`;
+      params.push(searchTerm, searchTerm);
+    }
+    
+    // Ordenamiento - MODIFICADO PARA SOPORTAR MÚLTIPLES CAMPOS Y DIRECCIONES
+    let orderClause = ' ORDER BY b.is_featured DESC';
+    
+    // Verificar si hay parámetros de ordenación específicos
+    if (filters.sort_by) {
+      // Añadir ordenamiento específico
+      orderClause += `, b.${filters.sort_by} ${filters.sort_order || 'DESC'}`;
+    } else {
+      // Ordenamiento por defecto por fecha de publicación descendente
+      orderClause += ', b.published_at DESC';
+    }
+    
+    query += orderClause;
+    
+    // Paginación
+    if (filters.limit) {
+      query += ' LIMIT ?';
+      params.push(parseInt(filters.limit));
+      
+      if (filters.offset || filters.offset === 0) {
+        query += ' OFFSET ?';
+        params.push(parseInt(filters.offset));
+      }
+    }
+    
+    const [blogs] = await connection.query(query, params);
+    
+    connection.release();
+    return blogs;
+  } catch (error) {
+    console.error('Error finding all blogs:', error);
+    throw error;
   }
+}
 
   // Obtener blogs destacados
-  static async getFeatured(limit = 2) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      const [blogs] = await connection.query(`
-        SELECT b.*, u.first_name, u.last_name, u.profile_image 
-        FROM blogs b
-        JOIN users u ON b.author_id = u.id
-        WHERE b.is_featured = 1
-        ORDER BY b.published_at DESC
-        LIMIT ?
-      `, [limit]);
-      
-      connection.release();
-      return blogs;
-    } catch (error) {
-      console.error('Error finding featured blogs:', error);
-      throw error;
-    }
+  // Corregir la función getFeatured en src/models/mysql/blog.model.js
+static async getFeatured(limit = 2) {
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    // Convertir limit a número para evitar el error de sintaxis SQL
+    const limitValue = parseInt(limit);
+    
+    const [blogs] = await connection.query(`
+      SELECT b.*, u.first_name, u.last_name, u.profile_image 
+      FROM blogs b
+      JOIN users u ON b.author_id = u.id
+      WHERE b.is_featured = 1
+      ORDER BY b.published_at DESC
+      LIMIT ?
+    `, [limitValue]);
+    
+    connection.release();
+    return blogs;
+  } catch (error) {
+    console.error('Error finding featured blogs:', error);
+    throw error;
   }
+}
   
   // Obtener categorías de blog
   static async getCategories() {

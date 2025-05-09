@@ -42,37 +42,51 @@ export class BlogService {
     }
   }
 
-  static async getBlogs(filters = {}) {
-    try {
-      // Obtener blogs con los filtros proporcionados
-      const blogs = await Blog.findAll(filters);
-      
-      // Obtener el total de blogs con los mismos filtros (sin paginación)
-      const total = await Blog.count(filters);
-      
-      return {
-        blogs,
-        total,
-        page: filters.offset ? Math.floor(filters.offset / filters.limit) + 1 : 1,
-        limit: filters.limit ? parseInt(filters.limit) : blogs.length
-      };
-    } catch (error) {
-      console.error('Error getting blogs:', error);
-      throw new DatabaseError('Error al obtener los blogs');
+  // Modificación en src/services/blog.service.js
+static async getBlogs(filters = {}) {
+  try {
+    // Asegurarse de que limit y offset son números
+    if (filters.limit) {
+      filters.limit = parseInt(filters.limit);
     }
+    if (filters.offset) {
+      filters.offset = parseInt(filters.offset);
+    }
+    
+    // Obtener blogs con los filtros proporcionados
+    const blogs = await Blog.findAll(filters);
+    
+    // Obtener el total de blogs con los mismos filtros (sin paginación)
+    const total = await Blog.count(filters);
+    
+    return {
+      blogs,
+      total,
+      page: filters.offset ? Math.floor(filters.offset / filters.limit) + 1 : 1,
+      limit: filters.limit ? filters.limit : blogs.length
+    };
+  } catch (error) {
+    console.error('Error getting blogs:', error);
+    throw new DatabaseError('Error al obtener los blogs');
   }
+}
 
-  static async getFeaturedBlogs(limit = 2) {
-    try {
-      // Obtener blogs destacados
-      const blogs = await Blog.getFeatured(limit);
-      
-      return blogs;
-    } catch (error) {
-      console.error('Error getting featured blogs:', error);
-      throw new DatabaseError('Error al obtener los blogs destacados');
-    }
+static async getFeaturedBlogs(limit = 2) {
+  try {
+    // Asegurarse de que limit es un número
+    const limitValue = parseInt(limit);
+    
+    // Obtener blogs destacados
+    const blogs = await Blog.getFeatured(limitValue);
+    
+    return blogs;
+  } catch (error) {
+    console.error('Error getting featured blogs:', error);
+    throw new DatabaseError('Error al obtener los blogs destacados');
   }
+}
+
+  
 
   static async getBlogById(id) {
     if (!id) {
