@@ -8,117 +8,127 @@ export const createPropertyTable = async () => {
 
 // Modelo principal de propiedades
 export class Property {
-  // Modificación al modelo Property para incluir el contador de vistas
+  // Modificación al modelo Property para incluir el contador de vistas y los nuevos tipos
 
-// En el método createTable, asegúrate de que la definición de la tabla incluya la columna views:
-static async createTable() {
-  const query = `
-    CREATE TABLE IF NOT EXISTS properties (
-      id INT PRIMARY KEY AUTO_INCREMENT,
-      title VARCHAR(255) NOT NULL,
-      description TEXT,
-      address VARCHAR(255) NOT NULL,
-      city VARCHAR(100) NOT NULL,
-      state VARCHAR(100),
-      zip_code VARCHAR(20),
-      price DECIMAL(10,2) NOT NULL,
-      bedrooms INT,
-      bathrooms DECIMAL(3,1),
-      square_feet DECIMAL(10,2),
-      property_type ENUM('house', 'apartment', 'room', 'office', 'commercial', 'land', 'daily-rental', 'new-building', 'parking-lot') NOT NULL,
-      status ENUM('for-rent', 'for-sale', 'unavailable') DEFAULT 'for-rent',
-      image VARCHAR(255),
-      isNew BOOLEAN DEFAULT FALSE,
-      isFeatured BOOLEAN DEFAULT FALSE,
-      isVerified BOOLEAN DEFAULT FALSE,
-      parkingSpaces INT DEFAULT 0,
-      host_id INT,
-      average_rating DECIMAL(3,2) DEFAULT 0,
-      views INT DEFAULT 0,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      lat DECIMAL(10,8),
-      lng DECIMAL(11,8)
-    )
-  `;
-  
-  try {
-    const connection = await mysqlPool.getConnection();
-    await connection.query(query);
-    connection.release();
-    console.log('Properties table created successfully');
-  } catch (error) {
-    console.error('Error creating properties table:', error);
-    throw error;
-  }
-}
-
-// También debes actualizar el método create para incluir views en la creación de nuevas propiedades
-static async create(propertyData) {
-  try {
-    const connection = await mysqlPool.getConnection();
+  // En el método createTable, asegúrate de que la definición de la tabla incluya la columna views:
+  static async createTable() {
+    const query = `
+      CREATE TABLE IF NOT EXISTS properties (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        title VARCHAR(255),
+        description TEXT,
+        address VARCHAR(255),
+        phone VARCHAR(100),
+        email VARCHAR(100),
+        category VARCHAR(200),
+        schedule VARCHAR(500),
+        bedrooms INT,
+        bathrooms DECIMAL(3,1),
+        square_feet DECIMAL(10,2),
+        property_type ENUM('Gym', 'Balneario', 'Belleza', 'Futbol', 'Motocross', 'Cafetería', 
+                           'Restaurante', 'Bar y restaurante', 'Comida rápida', 'Otro', 
+                           'Repostería', 'Heladería', 'Bebidas', 'Bar', 'Hotel', 'Motel', 
+                           'Casino', 'Cine', 'Videojuegos'),
+        status ENUM('for-rent', 'for-sale', 'unavailable') DEFAULT 'for-rent',
+        image VARCHAR(255),
+        isNew BOOLEAN DEFAULT FALSE,
+        isFeatured BOOLEAN DEFAULT FALSE,
+        isVerified BOOLEAN DEFAULT FALSE,
+        parkingSpaces INT DEFAULT 0,
+        host_id INT,
+        average_rating DECIMAL(3,2) DEFAULT 0,
+        views INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        lat DECIMAL(30,15),
+        lng DECIMAL(30,15),
+        archived BOOLEAN DEFAULT FALSE,
+        archived_at TIMESTAMP NULL,
+        archived_reason VARCHAR(255)
+      )
+    `;
     
-    const [result] = await connection.query(
-      `INSERT INTO properties (
-        title, description, address, city, state, zip_code, price, 
-        bedrooms, bathrooms, square_feet, property_type, status, image, 
-        isNew, isFeatured, isVerified, parkingSpaces, host_id, views, lat, lng
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        propertyData.title,
-        propertyData.description,
-        propertyData.address,
-        propertyData.city,
-        propertyData.state,
-        propertyData.zip_code,
-        propertyData.price,
-        propertyData.bedrooms,
-        propertyData.bathrooms,
-        propertyData.square_feet,
-        propertyData.property_type,
-        propertyData.status,
-        propertyData.image,
-        propertyData.isNew,
-        propertyData.isFeatured,
-        propertyData.isVerified,
-        propertyData.parkingSpaces,
-        propertyData.host_id,
-        propertyData.views || 0,
-        propertyData.lat,
-        propertyData.lng
-      ]
-    );
-    
-    connection.release();
-    return result.insertId;
-  } catch (error) {
-    console.error('Error creating property:', error);
-    throw error;
-  }
-}
-
-// Añadir un método específico para incrementar vistas
-static async incrementViews(id) {
-  if (!id) {
-    throw new Error('ID de propiedad es requerido');
+    try {
+      const connection = await mysqlPool.getConnection();
+      await connection.query(query);
+      connection.release();
+      console.log('Properties table created successfully');
+    } catch (error) {
+      console.error('Error creating properties table:', error);
+      throw error;
+    }
   }
 
-  try {
-    const connection = await mysqlPool.getConnection();
-    
-    // Actualizar el contador de vistas
-    const [result] = await connection.query(
-      'UPDATE properties SET views = COALESCE(views, 0) + 1 WHERE id = ?',
-      [id]
-    );
-    
-    connection.release();
-    return result.affectedRows > 0;
-  } catch (error) {
-    console.error('Error incrementing property views:', error);
-    throw error;
+  // También debes actualizar el método create para incluir views en la creación de nuevas propiedades
+  static async create(propertyData) {
+    try {
+      const connection = await mysqlPool.getConnection();
+      
+      // Preparar campos y valores para la consulta dinámica
+      const fields = [];
+      const placeholders = [];
+      const values = [];
+
+      // Lista de todos los campos posibles adaptados a tu estructura actual
+      const possibleFields = [
+        'title', 'description', 'address', 'phone', 'email', 'category', 
+        'schedule', 'bedrooms', 'bathrooms', 'square_feet', 'property_type', 
+        'status', 'image', 'isNew', 'isFeatured', 'isVerified', 'parkingSpaces', 
+        'host_id', 'views', 'lat', 'lng'
+      ];
+
+      // Añadir solo los campos que están definidos
+      possibleFields.forEach(field => {
+        if (propertyData[field] !== undefined) {
+          fields.push(field);
+          placeholders.push('?');
+          values.push(propertyData[field]);
+        }
+      });
+      
+      // Si no hay campos para insertar, lanzar error
+      if (fields.length === 0) {
+        throw new Error('No hay datos válidos para crear la propiedad');
+      }
+      
+      // Crear la consulta dinámica
+      const query = `
+        INSERT INTO properties (${fields.join(', ')})
+        VALUES (${placeholders.join(', ')})
+      `;
+      
+      const [result] = await connection.query(query, values);
+      
+      connection.release();
+      return result.insertId;
+    } catch (error) {
+      console.error('Error creating property:', error);
+      throw error;
+    }
   }
-}
+
+  // Añadir un método específico para incrementar vistas
+  static async incrementViews(id) {
+    if (!id) {
+      throw new Error('ID de propiedad es requerido');
+    }
+
+    try {
+      const connection = await mysqlPool.getConnection();
+      
+      // Actualizar el contador de vistas
+      const [result] = await connection.query(
+        'UPDATE properties SET views = COALESCE(views, 0) + 1 WHERE id = ?',
+        [id]
+      );
+      
+      connection.release();
+      return result.affectedRows > 0;
+    } catch (error) {
+      console.error('Error incrementing property views:', error);
+      throw error;
+    }
+  }
 
   // Actualizar una propiedad existente
   static async update(id, propertyData) {
@@ -161,27 +171,140 @@ static async incrementViews(id) {
 
   // Obtener todas las propiedades con filtros opcionales
   static async findAll(filters = {}, pagination = {}) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      let query = `
-        SELECT p.*, 
-               GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
-               GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
-        FROM properties p
-        LEFT JOIN property_amenities pa ON p.id = pa.property_id
-        LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
-        WHERE 1=1
-      `;
-      
-      const queryParams = [];
-      
-      // Aplicar filtros
-      if (filters.status) {
-        query += ' AND p.status = ?';
-        queryParams.push(filters.status);
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    let query = `
+      SELECT p.*, 
+             GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
+             GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
+      FROM properties p
+      LEFT JOIN property_amenities pa ON p.id = pa.property_id
+      LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+      WHERE 1=1
+    `;
+    
+    const queryParams = [];
+    
+    // Añadir filtro para excluir propiedades archivadas por defecto
+    if (filters.includeArchived !== true) {
+      query += ' AND (p.archived IS NULL OR p.archived = FALSE)';
+    }
+    
+    // Aplicar filtros
+    if (filters.status) {
+      query += ' AND p.status = ?';
+      queryParams.push(filters.status);
+    }
+    
+    // Manejar la relación entre categoría y property_type
+    if (filters.category && filters.property_type) {
+      // Si ambos están presentes, filtrar por categoría y property_type de manera relacionada
+      if (filters.category === 'Alojamiento') {
+        // Para Alojamiento, filtrar solo los property_types adecuados
+        const alojamientoTypes = ['Hotel', 'Motel'];
+        
+        if (Array.isArray(filters.property_type)) {
+          // Si es un array, filtramos solo aquellos que sean de alojamiento
+          const filteredTypes = filters.property_type.filter(type => 
+            alojamientoTypes.includes(type)
+          );
+          
+          if (filteredTypes.length > 0) {
+            query += ` AND p.property_type IN (${filteredTypes.map(() => '?').join(',')})`;
+            queryParams.push(...filteredTypes);
+          } else {
+            // Si ninguno coincide, no mostrar resultados
+            query += ' AND p.property_type IN ("none")';
+          }
+        } else {
+          // Si es un solo tipo, verificar que pertenezca a alojamiento
+          if (alojamientoTypes.includes(filters.property_type)) {
+            query += ' AND p.property_type = ?';
+            queryParams.push(filters.property_type);
+          } else {
+            // Si no coincide, no mostrar resultados
+            query += ' AND p.property_type IN ("none")';
+          }
+        }
+        
+        // Agregar el filtro de categoría exacto (sin LIKE)
+        query += ' AND p.category = ?';
+        queryParams.push(filters.category);
+      } 
+      else if (filters.category === 'Restaurante y bar') {
+        // Para Restaurante y bar, filtrar solo los property_types adecuados
+        const restauranteTypes = ['Cafetería', 'Restaurante', 'Bar y restaurante', 
+                                'Comida rápida', 'Repostería', 'Heladería', 
+                                'Bebidas', 'Bar'];
+        
+        if (Array.isArray(filters.property_type)) {
+          const filteredTypes = filters.property_type.filter(type => 
+            restauranteTypes.includes(type)
+          );
+          
+          if (filteredTypes.length > 0) {
+            query += ` AND p.property_type IN (${filteredTypes.map(() => '?').join(',')})`;
+            queryParams.push(...filteredTypes);
+          } else {
+            query += ' AND p.property_type IN ("none")';
+          }
+        } else {
+          if (restauranteTypes.includes(filters.property_type)) {
+            query += ' AND p.property_type = ?';
+            queryParams.push(filters.property_type);
+          } else {
+            query += ' AND p.property_type IN ("none")';
+          }
+        }
+        
+        query += ' AND p.category = ?';
+        queryParams.push(filters.category);
       }
-      
+      else if (filters.category === 'Entretenimiento') {
+        // Para Entretenimiento, filtrar solo los property_types adecuados
+        const entretenimientoTypes = ['Gym', 'Balneario', 'Belleza', 'Futbol', 
+                                     'Motocross', 'Casino', 'Cine', 'Videojuegos'];
+        
+        if (Array.isArray(filters.property_type)) {
+          const filteredTypes = filters.property_type.filter(type => 
+            entretenimientoTypes.includes(type)
+          );
+          
+          if (filteredTypes.length > 0) {
+            query += ` AND p.property_type IN (${filteredTypes.map(() => '?').join(',')})`;
+            queryParams.push(...filteredTypes);
+          } else {
+            query += ' AND p.property_type IN ("none")';
+          }
+        } else {
+          if (entretenimientoTypes.includes(filters.property_type)) {
+            query += ' AND p.property_type = ?';
+            queryParams.push(filters.property_type);
+          } else {
+            query += ' AND p.property_type IN ("none")';
+          }
+        }
+        
+        query += ' AND p.category = ?';
+        queryParams.push(filters.category);
+      }
+      else {
+        // Si es otra categoría, aplicar filtros normalmente
+        query += ' AND p.category = ?';
+        queryParams.push(filters.category);
+        
+        if (Array.isArray(filters.property_type)) {
+          query += ` AND p.property_type IN (${filters.property_type.map(() => '?').join(',')})`;
+          queryParams.push(...filters.property_type);
+        } else {
+          query += ' AND p.property_type = ?';
+          queryParams.push(filters.property_type);
+        }
+      }
+    } 
+    else {
+      // Si solo hay uno de los filtros, aplicar normalmente
       if (filters.property_type) {
         if (Array.isArray(filters.property_type)) {
           query += ` AND p.property_type IN (${filters.property_type.map(() => '?').join(',')})`;
@@ -192,139 +315,316 @@ static async incrementViews(id) {
         }
       }
       
-      if (filters.minPrice) {
-        query += ' AND p.price >= ?';
-        queryParams.push(parseFloat(filters.minPrice));
+      if (filters.category) {
+        // IMPORTANTE: Usar igual exacto en lugar de LIKE
+        query += ' AND p.category = ?';
+        queryParams.push(filters.category);
       }
-      
-      if (filters.maxPrice) {
-        query += ' AND p.price <= ?';
-        queryParams.push(parseFloat(filters.maxPrice));
-      }
-      
-      if (filters.city) {
-        query += ' AND p.city LIKE ?';
-        queryParams.push(`%${filters.city}%`);
-      }
-      
-      if (filters.minBedrooms) {
-        query += ' AND p.bedrooms >= ?';
-        queryParams.push(parseInt(filters.minBedrooms));
-      }
-      
-      if (filters.minBathrooms) {
-        query += ' AND p.bathrooms >= ?';
-        queryParams.push(parseFloat(filters.minBathrooms));
-      }
-      
-      if (filters.minArea) {
-        query += ' AND p.square_feet >= ?';
-        queryParams.push(parseFloat(filters.minArea));
-      }
-      
-      if (filters.maxArea) {
-        query += ' AND p.square_feet <= ?';
-        queryParams.push(parseFloat(filters.maxArea));
-      }
-      
-      if (filters.verified) {
-        query += ' AND p.isVerified = TRUE';
-      }
-      
-      if (filters.featured) {
-        query += ' AND p.isFeatured = TRUE';
-      }
-      
-      if (filters.host_id) {
-        query += ' AND p.host_id = ?';
-        queryParams.push(filters.host_id);
-      }
-      
-      // Filtros de amenidades
-      if (filters.amenities && Array.isArray(filters.amenities) && filters.amenities.length > 0) {
-        query += ` AND EXISTS (
-          SELECT 1 FROM property_amenities pa2 
-          WHERE pa2.property_id = p.id 
-          AND pa2.amenity IN (${filters.amenities.map(() => '?').join(',')})
-          GROUP BY pa2.property_id
-          HAVING COUNT(DISTINCT pa2.amenity) = ?
-        )`;
-        queryParams.push(...filters.amenities, filters.amenities.length);
-      }
-      
-      // Filtros de mascotas permitidas
-      if (filters.pets && Array.isArray(filters.pets) && filters.pets.length > 0) {
-        query += ` AND EXISTS (
-          SELECT 1 FROM property_pets_allowed ppa2 
-          WHERE ppa2.property_id = p.id 
-          AND ppa2.pet_type IN (${filters.pets.map(() => '?').join(',')})
-          GROUP BY ppa2.property_id
-          HAVING COUNT(DISTINCT ppa2.pet_type) = ?
-        )`;
-        queryParams.push(...filters.pets, filters.pets.length);
-      }
-      
-      // Agrupar por ID de propiedad para evitar duplicados por los JOIN
-      query += ' GROUP BY p.id';
-      
-      // Ordenación
-      query += ' ORDER BY p.created_at DESC';
-      
-      // Paginación
-      if (pagination.limit) {
-        query += ' LIMIT ?';
-        queryParams.push(parseInt(pagination.limit));
-        
-        if (pagination.offset) {
-          query += ' OFFSET ?';
-          queryParams.push(parseInt(pagination.offset));
-        }
-      }
-      
-      // Ejecutar consulta
-      const [properties] = await connection.query(query, queryParams);
-      
-      // Consulta para obtener el total sin paginación
-      let countQuery = `
-        SELECT COUNT(DISTINCT p.id) as total 
-        FROM properties p
-        LEFT JOIN property_amenities pa ON p.id = pa.property_id
-        LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
-        WHERE 1=1
-      `;
-      
-      // Aplicar los mismos filtros a la consulta de conteo
-      const countQueryParams = [...queryParams];
-      if (pagination.limit) {
-        // Eliminar los parámetros de LIMIT/OFFSET para el conteo
-        countQueryParams.pop();
-        if (pagination.offset) {
-          countQueryParams.pop();
-        }
-      }
-      
-      // Ejecutar consulta de conteo
-      const [countResult] = await connection.query(countQuery, countQueryParams);
-      const totalCount = countResult[0].total;
-      
-      connection.release();
-      
-      // Procesar y devolver resultados
-      const processedProperties = properties.map(property => ({
-        ...property,
-        amenities: property.amenities ? property.amenities.split(',') : [],
-        pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : []
-      }));
-      
-      return {
-        properties: processedProperties,
-        total: totalCount
-      };
-    } catch (error) {
-      console.error('Error finding properties:', error);
-      throw error;
     }
+    
+    // Para city, buscar en address ya que no hay columna city
+    if (filters.city) {
+      query += ' AND p.address LIKE ?';
+      queryParams.push(`%${filters.city}%`);
+    }
+    
+    if (filters.minBedrooms) {
+      query += ' AND p.bedrooms >= ?';
+      queryParams.push(parseInt(filters.minBedrooms));
+    }
+    
+    if (filters.minBathrooms) {
+      query += ' AND p.bathrooms >= ?';
+      queryParams.push(parseFloat(filters.minBathrooms));
+    }
+    
+    if (filters.minArea) {
+      query += ' AND p.square_feet >= ?';
+      queryParams.push(parseFloat(filters.minArea));
+    }
+    
+    if (filters.maxArea) {
+      query += ' AND p.square_feet <= ?';
+      queryParams.push(parseFloat(filters.maxArea));
+    }
+    
+    if (filters.verified) {
+      query += ' AND p.isVerified = TRUE';
+    }
+    
+    if (filters.featured) {
+      query += ' AND p.isFeatured = TRUE';
+    }
+    
+    if (filters.host_id) {
+      query += ' AND p.host_id = ?';
+      queryParams.push(filters.host_id);
+    }
+    
+    // Filtros de amenidades
+    if (filters.amenities && Array.isArray(filters.amenities) && filters.amenities.length > 0) {
+      query += ` AND EXISTS (
+        SELECT 1 FROM property_amenities pa2 
+        WHERE pa2.property_id = p.id 
+        AND pa2.amenity IN (${filters.amenities.map(() => '?').join(',')})
+        GROUP BY pa2.property_id
+        HAVING COUNT(DISTINCT pa2.amenity) = ?
+      )`;
+      queryParams.push(...filters.amenities, filters.amenities.length);
+    }
+    
+    // Filtros de mascotas permitidas
+    if (filters.pets && Array.isArray(filters.pets) && filters.pets.length > 0) {
+      query += ` AND EXISTS (
+        SELECT 1 FROM property_pets_allowed ppa2 
+        WHERE ppa2.property_id = p.id 
+        AND ppa2.pet_type IN (${filters.pets.map(() => '?').join(',')})
+        GROUP BY ppa2.property_id
+        HAVING COUNT(DISTINCT ppa2.pet_type) = ?
+      )`;
+      queryParams.push(...filters.pets, filters.pets.length);
+    }
+    
+    // Agrupar por ID de propiedad para evitar duplicados por los JOIN
+    query += ' GROUP BY p.id';
+    
+    // Ordenación - primero las destacadas (1), luego todas las demás (0 o NULL)
+    query += ' ORDER BY CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
+    
+    // Paginación
+    if (pagination.limit) {
+      query += ' LIMIT ?';
+      queryParams.push(parseInt(pagination.limit));
+      
+      if (pagination.offset) {
+        query += ' OFFSET ?';
+        queryParams.push(parseInt(pagination.offset));
+      }
+    }
+    
+    // Ejecutar consulta
+    const [properties] = await connection.query(query, queryParams);
+    
+    // Consulta para obtener el total sin paginación
+    let countQuery = `
+      SELECT COUNT(DISTINCT p.id) as total 
+      FROM properties p
+      LEFT JOIN property_amenities pa ON p.id = pa.property_id
+      LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+      WHERE 1=1
+    `;
+    
+    // Añadir filtro para excluir propiedades archivadas también en la consulta de conteo
+    if (filters.includeArchived !== true) {
+      countQuery += ' AND (p.archived IS NULL OR p.archived = FALSE)';
+    }
+    
+    // Aplicar los mismos filtros a la consulta de conteo
+    const countQueryParams = [];
+    
+    // Copiar los filtros sin incluir los de paginación
+    if (filters.status) {
+      countQuery += ' AND p.status = ?';
+      countQueryParams.push(filters.status);
+    }
+    
+    // Replicar la misma lógica de filtrado para la consulta de conteo
+    if (filters.category && filters.property_type) {
+      if (filters.category === 'Alojamiento') {
+        const alojamientoTypes = ['Hotel', 'Motel'];
+        
+        if (Array.isArray(filters.property_type)) {
+          const filteredTypes = filters.property_type.filter(type => 
+            alojamientoTypes.includes(type)
+          );
+          
+          if (filteredTypes.length > 0) {
+            countQuery += ` AND p.property_type IN (${filteredTypes.map(() => '?').join(',')})`;
+            countQueryParams.push(...filteredTypes);
+          } else {
+            countQuery += ' AND p.property_type IN ("none")';
+          }
+        } else {
+          if (alojamientoTypes.includes(filters.property_type)) {
+            countQuery += ' AND p.property_type = ?';
+            countQueryParams.push(filters.property_type);
+          } else {
+            countQuery += ' AND p.property_type IN ("none")';
+          }
+        }
+        
+        countQuery += ' AND p.category = ?';
+        countQueryParams.push(filters.category);
+      } 
+      else if (filters.category === 'Restaurante y bar') {
+        const restauranteTypes = ['Cafetería', 'Restaurante', 'Bar y restaurante', 
+                                'Comida rápida', 'Repostería', 'Heladería', 
+                                'Bebidas', 'Bar'];
+        
+        if (Array.isArray(filters.property_type)) {
+          const filteredTypes = filters.property_type.filter(type => 
+            restauranteTypes.includes(type)
+          );
+          
+          if (filteredTypes.length > 0) {
+            countQuery += ` AND p.property_type IN (${filteredTypes.map(() => '?').join(',')})`;
+            countQueryParams.push(...filteredTypes);
+          } else {
+            countQuery += ' AND p.property_type IN ("none")';
+          }
+        } else {
+          if (restauranteTypes.includes(filters.property_type)) {
+            countQuery += ' AND p.property_type = ?';
+            countQueryParams.push(filters.property_type);
+          } else {
+            countQuery += ' AND p.property_type IN ("none")';
+          }
+        }
+        
+        countQuery += ' AND p.category = ?';
+        countQueryParams.push(filters.category);
+      }
+      else if (filters.category === 'Entretenimiento') {
+        const entretenimientoTypes = ['Gym', 'Balneario', 'Belleza', 'Futbol', 
+                                     'Motocross', 'Casino', 'Cine', 'Videojuegos'];
+        
+        if (Array.isArray(filters.property_type)) {
+          const filteredTypes = filters.property_type.filter(type => 
+            entretenimientoTypes.includes(type)
+          );
+          
+          if (filteredTypes.length > 0) {
+            countQuery += ` AND p.property_type IN (${filteredTypes.map(() => '?').join(',')})`;
+            countQueryParams.push(...filteredTypes);
+          } else {
+            countQuery += ' AND p.property_type IN ("none")';
+          }
+        } else {
+          if (entretenimientoTypes.includes(filters.property_type)) {
+            countQuery += ' AND p.property_type = ?';
+            countQueryParams.push(filters.property_type);
+          } else {
+            countQuery += ' AND p.property_type IN ("none")';
+          }
+        }
+        
+        countQuery += ' AND p.category = ?';
+        countQueryParams.push(filters.category);
+      }
+      else {
+        countQuery += ' AND p.category = ?';
+        countQueryParams.push(filters.category);
+        
+        if (Array.isArray(filters.property_type)) {
+          countQuery += ` AND p.property_type IN (${filters.property_type.map(() => '?').join(',')})`;
+          countQueryParams.push(...filters.property_type);
+        } else {
+          countQuery += ' AND p.property_type = ?';
+          countQueryParams.push(filters.property_type);
+        }
+      }
+    } 
+    else {
+      if (filters.property_type) {
+        if (Array.isArray(filters.property_type)) {
+          countQuery += ` AND p.property_type IN (${filters.property_type.map(() => '?').join(',')})`;
+          countQueryParams.push(...filters.property_type);
+        } else {
+          countQuery += ' AND p.property_type = ?';
+          countQueryParams.push(filters.property_type);
+        }
+      }
+      
+      if (filters.category) {
+        countQuery += ' AND p.category = ?';
+        countQueryParams.push(filters.category);
+      }
+    }
+    
+    if (filters.city) {
+      countQuery += ' AND p.address LIKE ?';
+      countQueryParams.push(`%${filters.city}%`);
+    }
+    
+    if (filters.minBedrooms) {
+      countQuery += ' AND p.bedrooms >= ?';
+      countQueryParams.push(parseInt(filters.minBedrooms));
+    }
+    
+    if (filters.minBathrooms) {
+      countQuery += ' AND p.bathrooms >= ?';
+      countQueryParams.push(parseFloat(filters.minBathrooms));
+    }
+    
+    if (filters.minArea) {
+      countQuery += ' AND p.square_feet >= ?';
+      countQueryParams.push(parseFloat(filters.minArea));
+    }
+    
+    if (filters.maxArea) {
+      countQuery += ' AND p.square_feet <= ?';
+      countQueryParams.push(parseFloat(filters.maxArea));
+    }
+    
+    if (filters.verified) {
+      countQuery += ' AND p.isVerified = TRUE';
+    }
+    
+    if (filters.featured) {
+      countQuery += ' AND p.isFeatured = TRUE';
+    }
+    
+    if (filters.host_id) {
+      countQuery += ' AND p.host_id = ?';
+      countQueryParams.push(filters.host_id);
+    }
+    
+    // Filtrós de amenidades para conteo
+    if (filters.amenities && Array.isArray(filters.amenities) && filters.amenities.length > 0) {
+      countQuery += ` AND EXISTS (
+        SELECT 1 FROM property_amenities pa2 
+        WHERE pa2.property_id = p.id 
+        AND pa2.amenity IN (${filters.amenities.map(() => '?').join(',')})
+        GROUP BY pa2.property_id
+        HAVING COUNT(DISTINCT pa2.amenity) = ?
+      )`;
+      countQueryParams.push(...filters.amenities, filters.amenities.length);
+    }
+    
+    // Filtros de mascotas para conteo
+    if (filters.pets && Array.isArray(filters.pets) && filters.pets.length > 0) {
+      countQuery += ` AND EXISTS (
+        SELECT 1 FROM property_pets_allowed ppa2 
+        WHERE ppa2.property_id = p.id 
+        AND ppa2.pet_type IN (${filters.pets.map(() => '?').join(',')})
+        GROUP BY ppa2.property_id
+        HAVING COUNT(DISTINCT ppa2.pet_type) = ?
+      )`;
+      countQueryParams.push(...filters.pets, filters.pets.length);
+    }
+    
+    // Ejecutar consulta de conteo
+    const [countResult] = await connection.query(countQuery, countQueryParams);
+    const totalCount = countResult[0]?.total || 0;
+    
+    connection.release();
+    
+    // Procesar y devolver resultados
+    const processedProperties = properties.map(property => ({
+      ...property,
+      amenities: property.amenities ? property.amenities.split(',') : [],
+      pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : []
+    }));
+    
+    return {
+      properties: processedProperties,
+      total: totalCount
+    };
+  } catch (error) {
+    console.error('Error finding properties:', error);
+    throw error;
   }
+}
 
   // Encontrar una propiedad por ID
   static async findById(id) {
@@ -391,6 +691,52 @@ static async incrementViews(id) {
     }
   }
 
+  // Archivar una propiedad (borrado lógico)
+  static async archive(id, reason = null) {
+    try {
+      const connection = await mysqlPool.getConnection();
+      
+      const [result] = await connection.query(
+        `UPDATE properties SET 
+          archived = TRUE, 
+          archived_at = CURRENT_TIMESTAMP, 
+          archived_reason = ?, 
+          status = 'unavailable'
+         WHERE id = ?`,
+        [reason || null, id]
+      );
+      
+      connection.release();
+      return result.affectedRows > 0;
+    } catch (error) {
+      console.error('Error archiving property:', error);
+      throw error;
+    }
+  }
+
+  // Restaurar una propiedad archivada
+  static async restore(id, newStatus = 'for-rent') {
+    try {
+      const connection = await mysqlPool.getConnection();
+      
+      const [result] = await connection.query(
+        `UPDATE properties SET 
+          archived = FALSE, 
+          archived_at = NULL, 
+          archived_reason = NULL, 
+          status = ?
+         WHERE id = ?`,
+        [newStatus, id]
+      );
+      
+      connection.release();
+      return result.affectedRows > 0;
+    } catch (error) {
+      console.error('Error restoring property:', error);
+      throw error;
+    }
+  }
+
   // Obtener propiedades destacadas
   static async getFeatured(limit = 6, status = null) {
     try {
@@ -404,6 +750,7 @@ static async incrementViews(id) {
         LEFT JOIN property_amenities pa ON p.id = pa.property_id
         LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
         WHERE p.isFeatured = TRUE
+        AND (p.archived IS NULL OR p.archived = FALSE)
       `;
       
       const params = [];
@@ -444,12 +791,13 @@ static async incrementViews(id) {
         FROM properties p
         LEFT JOIN property_amenities pa ON p.id = pa.property_id
         LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+        WHERE (p.archived IS NULL OR p.archived = FALSE)
       `;
       
       const params = [];
       
       if (status) {
-        query += ' WHERE p.status = ?';
+        query += ' AND p.status = ?';
         params.push(status);
       }
       
@@ -468,6 +816,47 @@ static async incrementViews(id) {
       }));
     } catch (error) {
       console.error('Error getting recent properties:', error);
+      throw error;
+    }
+  }
+
+  // Obtener propiedades más vistas
+  static async getMostViewed(limit = 6, status = null) {
+    try {
+      const connection = await mysqlPool.getConnection();
+      
+      let query = `
+        SELECT p.*, 
+               GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
+               GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
+        FROM properties p
+        LEFT JOIN property_amenities pa ON p.id = pa.property_id
+        LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+        WHERE (p.archived IS NULL OR p.archived = FALSE)
+      `;
+      
+      const params = [];
+      
+      if (status) {
+        query += ' AND p.status = ?';
+        params.push(status);
+      }
+      
+      query += ' GROUP BY p.id ORDER BY p.views DESC, p.created_at DESC LIMIT ?';
+      params.push(limit);
+      
+      const [properties] = await connection.query(query, params);
+      
+      connection.release();
+      
+      // Procesar y devolver resultados
+      return properties.map(property => ({
+        ...property,
+        amenities: property.amenities ? property.amenities.split(',') : [],
+        pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : []
+      }));
+    } catch (error) {
+      console.error('Error getting most viewed properties:', error);
       throw error;
     }
   }

@@ -421,23 +421,38 @@ static async createReview(reviewData) {
    * @returns {Promise<number>} - Rating promedio
    */
   static async getPropertyAverageRating(propertyId) {
-    const connection = await mysqlPool.getConnection();
-    try {
-      const [result] = await connection.query(
-        'SELECT average_rating FROM properties WHERE id = ?',
-        [propertyId]
-      );
-
-      if (result.length === 0) {
-        throw new NotFoundError('Propiedad no encontrada');
-      }
-
-      return result[0].average_rating || 0;
-    } catch (error) {
-      console.error('Error al obtener el rating promedio:', error);
-      throw new DatabaseError('Error al obtener el rating promedio de la propiedad');
-    } finally {
-      connection.release();
-    }
+  if (!propertyId) {
+    throw new ValidationError('ID de propiedad es requerido');
   }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    // Primero verificar si la propiedad existe
+    const [propertyExists] = await connection.query(
+      'SELECT id FROM properties WHERE id = ?',
+      [propertyId]
+    );
+
+    if (propertyExists.length === 0) {
+      throw new NotFoundError('Propiedad no encontrada');
+    }
+
+    // Obtener promedio directamente de la tabla reviews
+    const [results] = await connection.query(
+      'SELECT AVG(rating) as average_rating FROM reviews WHERE property_id = ?',
+      [propertyId]
+    );
+
+    console.log('Resultado de rating query:', results);
+
+    // Si no hay reseñas, el promedio será NULL en MySQL
+    // Asegurarse de devolver 0 en ese caso
+    return results[0].average_rating !== null ? Number(results[0].average_rating) : 0;
+  } catch (error) {
+    console.error('Error al obtener el rating promedio:', error);
+    throw new DatabaseError('Error al obtener el rating promedio de la propiedad');
+  } finally {
+    connection.release();
+  }
+}
 }

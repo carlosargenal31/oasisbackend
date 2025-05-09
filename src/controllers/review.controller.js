@@ -147,16 +147,37 @@ static createReview = asyncErrorHandler(async (req, res) => {
   /**
    * Obtiene el rating promedio de una propiedad
    */
-  static getPropertyRating = asyncErrorHandler(async (req, res) => {
-    const propertyId = req.params.propertyId;
+ static getPropertyRating = asyncErrorHandler(async (req, res) => {
+  const propertyId = req.params.propertyId;
+  
+  try {
+    // Obtener rating promedio
     const averageRating = await ReviewService.getPropertyAverageRating(propertyId);
+    
+    
+    
+    // Asegurar que el valor sea numérico
+    const formattedRating = averageRating !== null ? Number(averageRating) : 0;
     
     res.json({
       success: true,
       data: {
         propertyId,
-        averageRating
+        averageRating: formattedRating
       }
     });
-  });
+  } catch (error) {
+    console.error(`Error al obtener rating para propiedad ${propertyId}:`, error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener rating promedio',
+      data: {
+        propertyId,
+        averageRating: 0
+      }
+    });
+  }
+});
+
+
 }

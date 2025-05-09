@@ -23,6 +23,7 @@ import { Booking } from './models/mysql/booking.model.js';
 import { createReviewTable } from './models/mysql/review.model.js';
 import { createPaymentTable } from './models/mysql/payment.model.js';
 import { createFavoritesTable } from './models/mysql/favorites.model.js';
+import { createBlogTable } from './models/mysql/blog.model.js'; // Importar la tabla de blogs
 
 // Importar rutas
 import userRoutes from './routes/user.routes.js';
@@ -32,6 +33,7 @@ import reviewRoutes from './routes/review.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
 import messageRoutes from './routes/message.routes.js';
 import authRoutes from './routes/auth.routes.js';
+import blogRoutes from './routes/blog.routes.js'; // Importar rutas de blogs
 
 const app = express();
 dotenv.config();
@@ -62,7 +64,10 @@ const initDatabase = async () => {
     await Booking.createTable();
     await createReviewTable();
     await createPaymentTable();
-    await createFavoritesTable(); 
+    await createFavoritesTable();
+    
+    // Crear tabla de blogs
+    await createBlogTable();
     
     console.log('All tables created successfully');
   } catch (error) {
@@ -80,7 +85,8 @@ app.get('/api/test', (req, res) => {
 
 // Rutas públicas (no requieren autenticación)
 app.use('/api/auth', authRoutes);
-app.use('/api/properties', propertyRoutes); 
+app.use('/api/properties', propertyRoutes);
+app.use('/api/blogs', blogRoutes); // Agregar rutas de blogs 
 
 // Rutas protegidas (requieren autenticación)
 app.use('/api/users', userRoutes);
