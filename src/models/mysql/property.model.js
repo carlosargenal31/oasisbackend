@@ -171,32 +171,140 @@ export class Property {
 
   // Obtener todas las propiedades con filtros opcionales
   static async findAll(filters = {}, pagination = {}) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      let query = `
-        SELECT p.*, 
-               GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
-               GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
-        FROM properties p
-        LEFT JOIN property_amenities pa ON p.id = pa.property_id
-        LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
-        WHERE 1=1
-      `;
-      
-      const queryParams = [];
-      
-      // Añadir filtro para excluir propiedades archivadas por defecto
-      if (filters.includeArchived !== true) {
-        query += ' AND (p.archived IS NULL OR p.archived = FALSE)';
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    let query = `
+      SELECT p.*, 
+             GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
+             GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
+      FROM properties p
+      LEFT JOIN property_amenities pa ON p.id = pa.property_id
+      LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+      WHERE 1=1
+    `;
+    
+    const queryParams = [];
+    
+    // Añadir filtro para excluir propiedades archivadas por defecto
+    if (filters.includeArchived !== true) {
+      query += ' AND (p.archived IS NULL OR p.archived = FALSE)';
+    }
+    
+    // Aplicar filtros
+    if (filters.status) {
+      query += ' AND p.status = ?';
+      queryParams.push(filters.status);
+    }
+    
+    // Manejar la relación entre categoría y property_type
+    if (filters.category && filters.property_type) {
+      // Si ambos están presentes, filtrar por categoría y property_type de manera relacionada
+      if (filters.category === 'Alojamiento') {
+        // Para Alojamiento, filtrar solo los property_types adecuados
+        const alojamientoTypes = ['Hotel', 'Motel'];
+        
+        if (Array.isArray(filters.property_type)) {
+          // Si es un array, filtramos solo aquellos que sean de alojamiento
+          const filteredTypes = filters.property_type.filter(type => 
+            alojamientoTypes.includes(type)
+          );
+          
+          if (filteredTypes.length > 0) {
+            query += ` AND p.property_type IN (${filteredTypes.map(() => '?').join(',')})`;
+            queryParams.push(...filteredTypes);
+          } else {
+            // Si ninguno coincide, no mostrar resultados
+            query += ' AND p.property_type IN ("none")';
+          }
+        } else {
+          // Si es un solo tipo, verificar que pertenezca a alojamiento
+          if (alojamientoTypes.includes(filters.property_type)) {
+            query += ' AND p.property_type = ?';
+            queryParams.push(filters.property_type);
+          } else {
+            // Si no coincide, no mostrar resultados
+            query += ' AND p.property_type IN ("none")';
+          }
+        }
+        
+        // Agregar el filtro de categoría exacto (sin LIKE)
+        query += ' AND p.category = ?';
+        queryParams.push(filters.category);
+      } 
+      else if (filters.category === 'Restaurante y bar') {
+        // Para Restaurante y bar, filtrar solo los property_types adecuados
+        const restauranteTypes = ['Cafetería', 'Restaurante', 'Bar y restaurante', 
+                                'Comida rápida', 'Repostería', 'Heladería', 
+                                'Bebidas', 'Bar'];
+        
+        if (Array.isArray(filters.property_type)) {
+          const filteredTypes = filters.property_type.filter(type => 
+            restauranteTypes.includes(type)
+          );
+          
+          if (filteredTypes.length > 0) {
+            query += ` AND p.property_type IN (${filteredTypes.map(() => '?').join(',')})`;
+            queryParams.push(...filteredTypes);
+          } else {
+            query += ' AND p.property_type IN ("none")';
+          }
+        } else {
+          if (restauranteTypes.includes(filters.property_type)) {
+            query += ' AND p.property_type = ?';
+            queryParams.push(filters.property_type);
+          } else {
+            query += ' AND p.property_type IN ("none")';
+          }
+        }
+        
+        query += ' AND p.category = ?';
+        queryParams.push(filters.category);
       }
-      
-      // Aplicar filtros
-      if (filters.status) {
-        query += ' AND p.status = ?';
-        queryParams.push(filters.status);
+      else if (filters.category === 'Entretenimiento') {
+        // Para Entretenimiento, filtrar solo los property_types adecuados
+        const entretenimientoTypes = ['Gym', 'Balneario', 'Belleza', 'Futbol', 
+                                     'Motocross', 'Casino', 'Cine', 'Videojuegos'];
+        
+        if (Array.isArray(filters.property_type)) {
+          const filteredTypes = filters.property_type.filter(type => 
+            entretenimientoTypes.includes(type)
+          );
+          
+          if (filteredTypes.length > 0) {
+            query += ` AND p.property_type IN (${filteredTypes.map(() => '?').join(',')})`;
+            queryParams.push(...filteredTypes);
+          } else {
+            query += ' AND p.property_type IN ("none")';
+          }
+        } else {
+          if (entretenimientoTypes.includes(filters.property_type)) {
+            query += ' AND p.property_type = ?';
+            queryParams.push(filters.property_type);
+          } else {
+            query += ' AND p.property_type IN ("none")';
+          }
+        }
+        
+        query += ' AND p.category = ?';
+        queryParams.push(filters.category);
       }
-      
+      else {
+        // Si es otra categoría, aplicar filtros normalmente
+        query += ' AND p.category = ?';
+        queryParams.push(filters.category);
+        
+        if (Array.isArray(filters.property_type)) {
+          query += ` AND p.property_type IN (${filters.property_type.map(() => '?').join(',')})`;
+          queryParams.push(...filters.property_type);
+        } else {
+          query += ' AND p.property_type = ?';
+          queryParams.push(filters.property_type);
+        }
+      }
+    } 
+    else {
+      // Si solo hay uno de los filtros, aplicar normalmente
       if (filters.property_type) {
         if (Array.isArray(filters.property_type)) {
           query += ` AND p.property_type IN (${filters.property_type.map(() => '?').join(',')})`;
@@ -207,118 +315,216 @@ export class Property {
         }
       }
       
-      // Usar category para filtros adicionales
       if (filters.category) {
-        query += ' AND p.category LIKE ?';
-        queryParams.push(`%${filters.category}%`);
+        // IMPORTANTE: Usar igual exacto en lugar de LIKE
+        query += ' AND p.category = ?';
+        queryParams.push(filters.category);
       }
+    }
+    
+    // Para city, buscar en address ya que no hay columna city
+    if (filters.city) {
+      query += ' AND p.address LIKE ?';
+      queryParams.push(`%${filters.city}%`);
+    }
+    
+    if (filters.minBedrooms) {
+      query += ' AND p.bedrooms >= ?';
+      queryParams.push(parseInt(filters.minBedrooms));
+    }
+    
+    if (filters.minBathrooms) {
+      query += ' AND p.bathrooms >= ?';
+      queryParams.push(parseFloat(filters.minBathrooms));
+    }
+    
+    if (filters.minArea) {
+      query += ' AND p.square_feet >= ?';
+      queryParams.push(parseFloat(filters.minArea));
+    }
+    
+    if (filters.maxArea) {
+      query += ' AND p.square_feet <= ?';
+      queryParams.push(parseFloat(filters.maxArea));
+    }
+    
+    if (filters.verified) {
+      query += ' AND p.isVerified = TRUE';
+    }
+    
+    if (filters.featured) {
+      query += ' AND p.isFeatured = TRUE';
+    }
+    
+    if (filters.host_id) {
+      query += ' AND p.host_id = ?';
+      queryParams.push(filters.host_id);
+    }
+    
+    // Filtros de amenidades
+    if (filters.amenities && Array.isArray(filters.amenities) && filters.amenities.length > 0) {
+      query += ` AND EXISTS (
+        SELECT 1 FROM property_amenities pa2 
+        WHERE pa2.property_id = p.id 
+        AND pa2.amenity IN (${filters.amenities.map(() => '?').join(',')})
+        GROUP BY pa2.property_id
+        HAVING COUNT(DISTINCT pa2.amenity) = ?
+      )`;
+      queryParams.push(...filters.amenities, filters.amenities.length);
+    }
+    
+    // Filtros de mascotas permitidas
+    if (filters.pets && Array.isArray(filters.pets) && filters.pets.length > 0) {
+      query += ` AND EXISTS (
+        SELECT 1 FROM property_pets_allowed ppa2 
+        WHERE ppa2.property_id = p.id 
+        AND ppa2.pet_type IN (${filters.pets.map(() => '?').join(',')})
+        GROUP BY ppa2.property_id
+        HAVING COUNT(DISTINCT ppa2.pet_type) = ?
+      )`;
+      queryParams.push(...filters.pets, filters.pets.length);
+    }
+    
+    // Agrupar por ID de propiedad para evitar duplicados por los JOIN
+    query += ' GROUP BY p.id';
+    
+    // Ordenación - primero las destacadas (1), luego todas las demás (0 o NULL)
+    query += ' ORDER BY CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
+    
+    // Paginación
+    if (pagination.limit) {
+      query += ' LIMIT ?';
+      queryParams.push(parseInt(pagination.limit));
       
-      // Para city, buscar en address ya que no hay columna city
-      if (filters.city) {
-        query += ' AND p.address LIKE ?';
-        queryParams.push(`%${filters.city}%`);
+      if (pagination.offset) {
+        query += ' OFFSET ?';
+        queryParams.push(parseInt(pagination.offset));
       }
-      
-      if (filters.minBedrooms) {
-        query += ' AND p.bedrooms >= ?';
-        queryParams.push(parseInt(filters.minBedrooms));
-      }
-      
-      if (filters.minBathrooms) {
-        query += ' AND p.bathrooms >= ?';
-        queryParams.push(parseFloat(filters.minBathrooms));
-      }
-      
-      if (filters.minArea) {
-        query += ' AND p.square_feet >= ?';
-        queryParams.push(parseFloat(filters.minArea));
-      }
-      
-      if (filters.maxArea) {
-        query += ' AND p.square_feet <= ?';
-        queryParams.push(parseFloat(filters.maxArea));
-      }
-      
-      if (filters.verified) {
-        query += ' AND p.isVerified = TRUE';
-      }
-      
-      if (filters.featured) {
-        query += ' AND p.isFeatured = TRUE';
-      }
-      
-      if (filters.host_id) {
-        query += ' AND p.host_id = ?';
-        queryParams.push(filters.host_id);
-      }
-      
-      // Filtros de amenidades
-      if (filters.amenities && Array.isArray(filters.amenities) && filters.amenities.length > 0) {
-        query += ` AND EXISTS (
-          SELECT 1 FROM property_amenities pa2 
-          WHERE pa2.property_id = p.id 
-          AND pa2.amenity IN (${filters.amenities.map(() => '?').join(',')})
-          GROUP BY pa2.property_id
-          HAVING COUNT(DISTINCT pa2.amenity) = ?
-        )`;
-        queryParams.push(...filters.amenities, filters.amenities.length);
-      }
-      
-      // Filtros de mascotas permitidas
-      if (filters.pets && Array.isArray(filters.pets) && filters.pets.length > 0) {
-        query += ` AND EXISTS (
-          SELECT 1 FROM property_pets_allowed ppa2 
-          WHERE ppa2.property_id = p.id 
-          AND ppa2.pet_type IN (${filters.pets.map(() => '?').join(',')})
-          GROUP BY ppa2.property_id
-          HAVING COUNT(DISTINCT ppa2.pet_type) = ?
-        )`;
-        queryParams.push(...filters.pets, filters.pets.length);
-      }
-      
-      // Agrupar por ID de propiedad para evitar duplicados por los JOIN
-      query += ' GROUP BY p.id';
-      
-      // Ordenación - primero las destacadas (1), luego todas las demás (0 o NULL)
-      query += ' ORDER BY CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
-      
-      // Paginación
-      if (pagination.limit) {
-        query += ' LIMIT ?';
-        queryParams.push(parseInt(pagination.limit));
+    }
+    
+    // Ejecutar consulta
+    const [properties] = await connection.query(query, queryParams);
+    
+    // Consulta para obtener el total sin paginación
+    let countQuery = `
+      SELECT COUNT(DISTINCT p.id) as total 
+      FROM properties p
+      LEFT JOIN property_amenities pa ON p.id = pa.property_id
+      LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+      WHERE 1=1
+    `;
+    
+    // Añadir filtro para excluir propiedades archivadas también en la consulta de conteo
+    if (filters.includeArchived !== true) {
+      countQuery += ' AND (p.archived IS NULL OR p.archived = FALSE)';
+    }
+    
+    // Aplicar los mismos filtros a la consulta de conteo
+    const countQueryParams = [];
+    
+    // Copiar los filtros sin incluir los de paginación
+    if (filters.status) {
+      countQuery += ' AND p.status = ?';
+      countQueryParams.push(filters.status);
+    }
+    
+    // Replicar la misma lógica de filtrado para la consulta de conteo
+    if (filters.category && filters.property_type) {
+      if (filters.category === 'Alojamiento') {
+        const alojamientoTypes = ['Hotel', 'Motel'];
         
-        if (pagination.offset) {
-          query += ' OFFSET ?';
-          queryParams.push(parseInt(pagination.offset));
+        if (Array.isArray(filters.property_type)) {
+          const filteredTypes = filters.property_type.filter(type => 
+            alojamientoTypes.includes(type)
+          );
+          
+          if (filteredTypes.length > 0) {
+            countQuery += ` AND p.property_type IN (${filteredTypes.map(() => '?').join(',')})`;
+            countQueryParams.push(...filteredTypes);
+          } else {
+            countQuery += ' AND p.property_type IN ("none")';
+          }
+        } else {
+          if (alojamientoTypes.includes(filters.property_type)) {
+            countQuery += ' AND p.property_type = ?';
+            countQueryParams.push(filters.property_type);
+          } else {
+            countQuery += ' AND p.property_type IN ("none")';
+          }
+        }
+        
+        countQuery += ' AND p.category = ?';
+        countQueryParams.push(filters.category);
+      } 
+      else if (filters.category === 'Restaurante y bar') {
+        const restauranteTypes = ['Cafetería', 'Restaurante', 'Bar y restaurante', 
+                                'Comida rápida', 'Repostería', 'Heladería', 
+                                'Bebidas', 'Bar'];
+        
+        if (Array.isArray(filters.property_type)) {
+          const filteredTypes = filters.property_type.filter(type => 
+            restauranteTypes.includes(type)
+          );
+          
+          if (filteredTypes.length > 0) {
+            countQuery += ` AND p.property_type IN (${filteredTypes.map(() => '?').join(',')})`;
+            countQueryParams.push(...filteredTypes);
+          } else {
+            countQuery += ' AND p.property_type IN ("none")';
+          }
+        } else {
+          if (restauranteTypes.includes(filters.property_type)) {
+            countQuery += ' AND p.property_type = ?';
+            countQueryParams.push(filters.property_type);
+          } else {
+            countQuery += ' AND p.property_type IN ("none")';
+          }
+        }
+        
+        countQuery += ' AND p.category = ?';
+        countQueryParams.push(filters.category);
+      }
+      else if (filters.category === 'Entretenimiento') {
+        const entretenimientoTypes = ['Gym', 'Balneario', 'Belleza', 'Futbol', 
+                                     'Motocross', 'Casino', 'Cine', 'Videojuegos'];
+        
+        if (Array.isArray(filters.property_type)) {
+          const filteredTypes = filters.property_type.filter(type => 
+            entretenimientoTypes.includes(type)
+          );
+          
+          if (filteredTypes.length > 0) {
+            countQuery += ` AND p.property_type IN (${filteredTypes.map(() => '?').join(',')})`;
+            countQueryParams.push(...filteredTypes);
+          } else {
+            countQuery += ' AND p.property_type IN ("none")';
+          }
+        } else {
+          if (entretenimientoTypes.includes(filters.property_type)) {
+            countQuery += ' AND p.property_type = ?';
+            countQueryParams.push(filters.property_type);
+          } else {
+            countQuery += ' AND p.property_type IN ("none")';
+          }
+        }
+        
+        countQuery += ' AND p.category = ?';
+        countQueryParams.push(filters.category);
+      }
+      else {
+        countQuery += ' AND p.category = ?';
+        countQueryParams.push(filters.category);
+        
+        if (Array.isArray(filters.property_type)) {
+          countQuery += ` AND p.property_type IN (${filters.property_type.map(() => '?').join(',')})`;
+          countQueryParams.push(...filters.property_type);
+        } else {
+          countQuery += ' AND p.property_type = ?';
+          countQueryParams.push(filters.property_type);
         }
       }
-      
-      // Ejecutar consulta
-      const [properties] = await connection.query(query, queryParams);
-      
-      // Consulta para obtener el total sin paginación
-      let countQuery = `
-        SELECT COUNT(DISTINCT p.id) as total 
-        FROM properties p
-        LEFT JOIN property_amenities pa ON p.id = pa.property_id
-        LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
-        WHERE 1=1
-      `;
-      
-      // Añadir filtro para excluir propiedades archivadas también en la consulta de conteo
-      if (filters.includeArchived !== true) {
-        countQuery += ' AND (p.archived IS NULL OR p.archived = FALSE)';
-      }
-      
-      // Aplicar los mismos filtros a la consulta de conteo
-      const countQueryParams = [];
-      
-      // Copiar los filtros sin incluir los de paginación
-      if (filters.status) {
-        countQuery += ' AND p.status = ?';
-        countQueryParams.push(filters.status);
-      }
-      
+    } 
+    else {
       if (filters.property_type) {
         if (Array.isArray(filters.property_type)) {
           countQuery += ` AND p.property_type IN (${filters.property_type.map(() => '?').join(',')})`;
@@ -330,94 +536,95 @@ export class Property {
       }
       
       if (filters.category) {
-        countQuery += ' AND p.category LIKE ?';
-        countQueryParams.push(`%${filters.category}%`);
+        countQuery += ' AND p.category = ?';
+        countQueryParams.push(filters.category);
       }
-      
-      if (filters.city) {
-        countQuery += ' AND p.address LIKE ?';
-        countQueryParams.push(`%${filters.city}%`);
-      }
-      
-      if (filters.minBedrooms) {
-        countQuery += ' AND p.bedrooms >= ?';
-        countQueryParams.push(parseInt(filters.minBedrooms));
-      }
-      
-      if (filters.minBathrooms) {
-        countQuery += ' AND p.bathrooms >= ?';
-        countQueryParams.push(parseFloat(filters.minBathrooms));
-      }
-      
-      if (filters.minArea) {
-        countQuery += ' AND p.square_feet >= ?';
-        countQueryParams.push(parseFloat(filters.minArea));
-      }
-      
-      if (filters.maxArea) {
-        countQuery += ' AND p.square_feet <= ?';
-        countQueryParams.push(parseFloat(filters.maxArea));
-      }
-      
-      if (filters.verified) {
-        countQuery += ' AND p.isVerified = TRUE';
-      }
-      
-      if (filters.featured) {
-        countQuery += ' AND p.isFeatured = TRUE';
-      }
-      
-      if (filters.host_id) {
-        countQuery += ' AND p.host_id = ?';
-        countQueryParams.push(filters.host_id);
-      }
-      
-      // Filtrós de amenidades para conteo
-      if (filters.amenities && Array.isArray(filters.amenities) && filters.amenities.length > 0) {
-        countQuery += ` AND EXISTS (
-          SELECT 1 FROM property_amenities pa2 
-          WHERE pa2.property_id = p.id 
-          AND pa2.amenity IN (${filters.amenities.map(() => '?').join(',')})
-          GROUP BY pa2.property_id
-          HAVING COUNT(DISTINCT pa2.amenity) = ?
-        )`;
-        countQueryParams.push(...filters.amenities, filters.amenities.length);
-      }
-      
-      // Filtros de mascotas para conteo
-      if (filters.pets && Array.isArray(filters.pets) && filters.pets.length > 0) {
-        countQuery += ` AND EXISTS (
-          SELECT 1 FROM property_pets_allowed ppa2 
-          WHERE ppa2.property_id = p.id 
-          AND ppa2.pet_type IN (${filters.pets.map(() => '?').join(',')})
-          GROUP BY ppa2.property_id
-          HAVING COUNT(DISTINCT ppa2.pet_type) = ?
-        )`;
-        countQueryParams.push(...filters.pets, filters.pets.length);
-      }
-      
-      // Ejecutar consulta de conteo
-      const [countResult] = await connection.query(countQuery, countQueryParams);
-      const totalCount = countResult[0]?.total || 0;
-      
-      connection.release();
-      
-      // Procesar y devolver resultados
-      const processedProperties = properties.map(property => ({
-        ...property,
-        amenities: property.amenities ? property.amenities.split(',') : [],
-        pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : []
-      }));
-      
-      return {
-        properties: processedProperties,
-        total: totalCount
-      };
-    } catch (error) {
-      console.error('Error finding properties:', error);
-      throw error;
     }
+    
+    if (filters.city) {
+      countQuery += ' AND p.address LIKE ?';
+      countQueryParams.push(`%${filters.city}%`);
+    }
+    
+    if (filters.minBedrooms) {
+      countQuery += ' AND p.bedrooms >= ?';
+      countQueryParams.push(parseInt(filters.minBedrooms));
+    }
+    
+    if (filters.minBathrooms) {
+      countQuery += ' AND p.bathrooms >= ?';
+      countQueryParams.push(parseFloat(filters.minBathrooms));
+    }
+    
+    if (filters.minArea) {
+      countQuery += ' AND p.square_feet >= ?';
+      countQueryParams.push(parseFloat(filters.minArea));
+    }
+    
+    if (filters.maxArea) {
+      countQuery += ' AND p.square_feet <= ?';
+      countQueryParams.push(parseFloat(filters.maxArea));
+    }
+    
+    if (filters.verified) {
+      countQuery += ' AND p.isVerified = TRUE';
+    }
+    
+    if (filters.featured) {
+      countQuery += ' AND p.isFeatured = TRUE';
+    }
+    
+    if (filters.host_id) {
+      countQuery += ' AND p.host_id = ?';
+      countQueryParams.push(filters.host_id);
+    }
+    
+    // Filtrós de amenidades para conteo
+    if (filters.amenities && Array.isArray(filters.amenities) && filters.amenities.length > 0) {
+      countQuery += ` AND EXISTS (
+        SELECT 1 FROM property_amenities pa2 
+        WHERE pa2.property_id = p.id 
+        AND pa2.amenity IN (${filters.amenities.map(() => '?').join(',')})
+        GROUP BY pa2.property_id
+        HAVING COUNT(DISTINCT pa2.amenity) = ?
+      )`;
+      countQueryParams.push(...filters.amenities, filters.amenities.length);
+    }
+    
+    // Filtros de mascotas para conteo
+    if (filters.pets && Array.isArray(filters.pets) && filters.pets.length > 0) {
+      countQuery += ` AND EXISTS (
+        SELECT 1 FROM property_pets_allowed ppa2 
+        WHERE ppa2.property_id = p.id 
+        AND ppa2.pet_type IN (${filters.pets.map(() => '?').join(',')})
+        GROUP BY ppa2.property_id
+        HAVING COUNT(DISTINCT ppa2.pet_type) = ?
+      )`;
+      countQueryParams.push(...filters.pets, filters.pets.length);
+    }
+    
+    // Ejecutar consulta de conteo
+    const [countResult] = await connection.query(countQuery, countQueryParams);
+    const totalCount = countResult[0]?.total || 0;
+    
+    connection.release();
+    
+    // Procesar y devolver resultados
+    const processedProperties = properties.map(property => ({
+      ...property,
+      amenities: property.amenities ? property.amenities.split(',') : [],
+      pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : []
+    }));
+    
+    return {
+      properties: processedProperties,
+      total: totalCount
+    };
+  } catch (error) {
+    console.error('Error finding properties:', error);
+    throw error;
   }
+}
 
   // Encontrar una propiedad por ID
   static async findById(id) {

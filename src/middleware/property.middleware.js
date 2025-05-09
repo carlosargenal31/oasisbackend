@@ -5,6 +5,28 @@ export const validatePropertyData = (req, res, next) => {
   // Validamos campos esenciales
   const errors = [];
   
+  // Validar la compatibilidad entre categoría y tipo de propiedad
+  if (req.body.category && req.body.property_type) {
+    const alojamientoTypes = ['Hotel', 'Motel'];
+    const restauranteTypes = ['Cafetería', 'Restaurante', 'Bar y restaurante', 
+                            'Comida rápida', 'Repostería', 'Heladería', 
+                            'Bebidas', 'Bar'];
+    const entretenimientoTypes = ['Gym', 'Balneario', 'Belleza', 'Futbol', 
+                                 'Motocross', 'Casino', 'Cine', 'Videojuegos'];
+    
+    if (req.body.category === 'Alojamiento' && !alojamientoTypes.includes(req.body.property_type)) {
+      throw new ValidationError(`Tipo de propiedad "${req.body.property_type}" no válido para la categoría "Alojamiento"`);
+    }
+    
+    if (req.body.category === 'Restaurante y bar' && !restauranteTypes.includes(req.body.property_type)) {
+      throw new ValidationError(`Tipo de propiedad "${req.body.property_type}" no válido para la categoría "Restaurante y bar"`);
+    }
+    
+    if (req.body.category === 'Entretenimiento' && !entretenimientoTypes.includes(req.body.property_type)) {
+      throw new ValidationError(`Tipo de propiedad "${req.body.property_type}" no válido para la categoría "Entretenimiento"`);
+    }
+  }
+  
   // Solo validamos el tipo de propiedad si se proporciona
   if (req.body.property_type) {
     const validTypes = [
