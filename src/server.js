@@ -23,7 +23,8 @@ import { Booking } from './models/mysql/booking.model.js';
 import { createReviewTable } from './models/mysql/review.model.js';
 import { createPaymentTable } from './models/mysql/payment.model.js';
 import { createFavoritesTable } from './models/mysql/favorites.model.js';
-import { createBlogTable } from './models/mysql/blog.model.js'; // Importar la tabla de blogs
+import { createBlogTable } from './models/mysql/blog.model.js';
+import { createEventTable } from './models/mysql/event.model.js'; // Importar la tabla de eventos
 
 // Importar rutas
 import userRoutes from './routes/user.routes.js';
@@ -33,7 +34,8 @@ import reviewRoutes from './routes/review.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
 import messageRoutes from './routes/message.routes.js';
 import authRoutes from './routes/auth.routes.js';
-import blogRoutes from './routes/blog.routes.js'; // Importar rutas de blogs
+import blogRoutes from './routes/blog.routes.js';
+import eventRoutes from './routes/event.routes.js'; // Importar rutas de eventos
 
 const app = express();
 dotenv.config();
@@ -69,6 +71,9 @@ const initDatabase = async () => {
     // Crear tabla de blogs
     await createBlogTable();
     
+    // Crear tabla de eventos
+    await createEventTable();
+    
     console.log('All tables created successfully');
   } catch (error) {
     console.error('Error initializing database:', error);
@@ -86,7 +91,8 @@ app.get('/api/test', (req, res) => {
 // Rutas públicas (no requieren autenticación)
 app.use('/api/auth', authRoutes);
 app.use('/api/properties', propertyRoutes);
-app.use('/api/blogs', blogRoutes); // Agregar rutas de blogs 
+app.use('/api/blogs', blogRoutes); 
+app.use('/api/events', eventRoutes); // Agregar rutas de eventos
 
 // Rutas protegidas (requieren autenticación)
 app.use('/api/users', userRoutes);
@@ -116,7 +122,7 @@ app.get('/api/dev/user/:id', async (req, res) => {
 // 404 error handler para API
 app.use('/api/*', (req, res) => {
   res.status(404).json({ 
-    successsuccess: false,
+    success: false,
     message: `Page not found: ${req.originalUrl}`
   });
 });
