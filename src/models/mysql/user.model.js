@@ -1,6 +1,7 @@
 // src/models/mysql/user.model.js
 import { mysqlPool } from '../../config/database.js';
 
+// Actualizar en el método createUserTable(), agregar la columna role:
 export const createUserTable = async () => {
   const query = `
     CREATE TABLE IF NOT EXISTS users (
@@ -10,6 +11,7 @@ export const createUserTable = async () => {
       email VARCHAR(100) UNIQUE NOT NULL,
       phone VARCHAR(20),
       status ENUM('active', 'inactive', 'banned') DEFAULT 'active',
+      role ENUM('user', 'admin') DEFAULT 'user',
       profile_image VARCHAR(255),
       refresh_token VARCHAR(255),
       last_login TIMESTAMP,
