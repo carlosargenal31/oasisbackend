@@ -1,3 +1,4 @@
+// server.js
 import express from 'express';
 import { errorMiddleware } from './middleware/error.middleware.js';
 import { authenticate } from './middleware/auth.middleware.js';
@@ -24,7 +25,7 @@ import { createReviewTable } from './models/mysql/review.model.js';
 import { createPaymentTable } from './models/mysql/payment.model.js';
 import { createFavoritesTable } from './models/mysql/favorites.model.js';
 import { createBlogTable } from './models/mysql/blog.model.js';
-import { createEventTable } from './models/mysql/event.model.js'; // Importar la tabla de eventos
+import { createEventTable } from './models/mysql/event.model.js';
 
 // Importar rutas
 import userRoutes from './routes/user.routes.js';
@@ -35,7 +36,8 @@ import paymentRoutes from './routes/payment.routes.js';
 import messageRoutes from './routes/message.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import blogRoutes from './routes/blog.routes.js';
-import eventRoutes from './routes/event.routes.js'; // Importar rutas de eventos
+import eventRoutes from './routes/event.routes.js';
+import adminRoutes from './routes/admin.routes.js'; // Importar las rutas de administrador
 
 const app = express();
 dotenv.config();
@@ -52,8 +54,34 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // Función para inicializar la base de datos
 const initDatabase = async () => {
   try {
-    // Crear las tablas en orden de dependencias
+    console.log('Iniciando creación de tablas...');
+    
+    // Actualizar la tabla de usuarios para incluir el campo 'role'
     await createUserTable();
+    
+    // Verificar y agregar la columna 'role' si no existe
+    try {
+      const checkRoleColumn = await mysqlPool.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = ? 
+        AND TABLE_NAME = 'users' 
+        AND COLUMN_NAME = 'role'
+      `, [process.env.DB_NAME || 'oasis']);
+      
+      if (checkRoleColumn[0].length === 0) {
+        console.log('Adding role column to users table...');
+        await mysqlPool.query(`
+          ALTER TABLE users 
+          ADD COLUMN role ENUM('user', 'admin') DEFAULT 'user'
+        `);
+        console.log('Role column added successfully');
+      } else {
+        console.log('Role column already exists');
+      }
+    } catch (error) {
+      console.error('Error checking/adding role column:', error);
+    }
 
     await createAuthTable();
     
@@ -92,7 +120,7 @@ app.get('/api/test', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/properties', propertyRoutes);
 app.use('/api/blogs', blogRoutes); 
-app.use('/api/events', eventRoutes); // Agregar rutas de eventos
+app.use('/api/events', eventRoutes);
 
 // Rutas protegidas (requieren autenticación)
 app.use('/api/users', userRoutes);
@@ -100,6 +128,9 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/messages', messageRoutes);
+
+// Rutas de administrador (requieren autenticación y privilegios de admin)
+app.use('/api/admin', adminRoutes);
 
 // Ruta para probar un usuario específico (solo para desarrollo)
 app.get('/api/dev/user/:id', async (req, res) => {
@@ -116,6 +147,67 @@ app.get('/api/dev/user/:id', async (req, res) => {
   } catch (error) {
     console.error('Error:', error);
     res.status(500).json({ success: false, message: 'Error del servidor' });
+  }
+});
+
+// Ruta para crear un usuario administrador (solo para desarrollo)
+app.post('/api/dev/create-admin', async (req, res) => {
+  try {
+    const { email, password, first_name, last_name } = req.body;
+    
+    if (!email || !password || !first_name || !last_name) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email, password, first_name y last_name son requeridos' 
+      });
+    }
+    
+    const connection = await mysqlPool.getConnection();
+    
+    // Verificar si el usuario ya existe
+    const [existingUser] = await connection.query('SELECT id FROM users WHERE email = ?', [email]);
+    
+    if (existingUser.length > 0) {
+      connection.release();
+      return res.status(400).json({ 
+        success: false, 
+        message: 'El email ya está registrado' 
+      });
+    }
+    
+    // Crear el usuario con role admin
+    const [userResult] = await connection.query(`
+      INSERT INTO users (first_name, last_name, email, role, status, created_at, updated_at)
+      VALUES (?, ?, ?, 'admin', 'active', NOW(), NOW())
+    `, [first_name, last_name, email]);
+    
+    // Hash de la contraseña
+    const bcrypt = require('bcryptjs');
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    // Crear credenciales de autenticación
+    await connection.query(`
+      INSERT INTO auth_credentials (user_id, password)
+      VALUES (?, ?)
+    `, [userResult.insertId, hashedPassword]);
+    
+    connection.release();
+    
+    res.json({ 
+      success: true, 
+      message: 'Administrador creado exitosamente',
+      data: {
+        id: userResult.insertId,
+        email,
+        role: 'admin'
+      }
+    });
+  } catch (error) {
+    console.error('Error creando administrador:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error al crear administrador' 
+    });
   }
 });
 
@@ -147,6 +239,7 @@ const PORT = process.env.PORT || 3000;
 initDatabase().then(() => {
   app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+    console.log(`Admin routes available at: http://localhost:${PORT}/api/admin`);
   });
 });
 
