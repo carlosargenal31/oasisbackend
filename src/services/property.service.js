@@ -704,84 +704,84 @@ export class PropertyService {
   }
 
   static async searchProperties(searchTerm) {
-    if (!searchTerm) {
-      throw new ValidationError('Término de búsqueda es requerido');
-    }
-
-    const connection = await mysqlPool.getConnection();
-    try {
-      const searchPattern = `%${searchTerm}%`;
-      
-      const query = `
-        SELECT p.*, 
-               GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
-               GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
-        FROM properties p
-        LEFT JOIN property_amenities pa ON p.id = pa.property_id
-        LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
-        WHERE (p.archived IS NULL OR p.archived = FALSE)
-        AND (
-          p.title LIKE ? 
-          OR p.description LIKE ? 
-          OR p.address LIKE ? 
-          OR p.category LIKE ?
-          OR p.property_type LIKE ?
-        )
-        GROUP BY p.id
-        ORDER BY 
-          CASE 
-            WHEN p.title LIKE ? THEN 1
-            WHEN p.description LIKE ? THEN 2
-            WHEN p.property_type LIKE ? THEN 3
-            WHEN p.address LIKE ? THEN 4
-            WHEN p.category LIKE ? THEN 5
-            ELSE 6
-          END,
-          p.views DESC,
-          p.created_at DESC
-      `;
-      
-      const [properties] = await connection.query(
-        query,
-        [
-          searchPattern,
-          searchPattern,
-          searchPattern,
-          searchPattern,
-          searchPattern,
-          searchPattern,
-          searchPattern,
-          searchPattern,
-          searchPattern,
-          searchPattern
-        ]
-      ).catch(error => {
-        console.error('Error al buscar propiedades:', error);
-        throw new DatabaseError('Error al buscar propiedades');
-      });
-
-      // Procesar los resultados
-      const processedProperties = properties.map(property => ({
-        ...property,
-        amenities: property.amenities ? property.amenities.split(',') : [],
-        pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : [],
-        matches_found_in: [
-          property.title?.toLowerCase().includes(searchTerm.toLowerCase()) && 'title',
-          property.description?.toLowerCase().includes(searchTerm.toLowerCase()) && 'description',
-          property.address?.toLowerCase().includes(searchTerm.toLowerCase()) && 'address',
-          property.category?.toLowerCase().includes(searchTerm.toLowerCase()) && 'category',
-          property.property_type?.toLowerCase().includes(searchTerm.toLowerCase()) && 'property_type'
-        ].filter(Boolean)
-      }));
-      
-      connection.release();
-      return processedProperties;
-    } catch (error) {
-      throw error;
-    } finally {
-      if (connection) connection.release();
-    }
+  if (!searchTerm) {
+    throw new ValidationError('Término de búsqueda es requerido');
   }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    const searchPattern = `%${searchTerm}%`;
+    
+    const query = `
+      SELECT p.*, 
+             GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
+             GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
+      FROM properties p
+      LEFT JOIN property_amenities pa ON p.id = pa.property_id
+      LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+      WHERE (p.archived IS NULL OR p.archived = FALSE)
+      AND (
+        p.title LIKE ? 
+        OR p.description LIKE ? 
+        OR p.address LIKE ? 
+        OR p.category LIKE ?
+        OR p.property_type LIKE ?
+      )
+      GROUP BY p.id
+      ORDER BY 
+        CASE 
+          WHEN p.title LIKE ? THEN 1
+          WHEN p.description LIKE ? THEN 2
+          WHEN p.property_type LIKE ? THEN 3
+          WHEN p.address LIKE ? THEN 4
+          WHEN p.category LIKE ? THEN 5
+          ELSE 6
+        END,
+        p.views DESC,
+        p.created_at DESC
+    `;
+    
+    const [properties] = await connection.query(
+      query,
+      [
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern
+      ]
+    ).catch(error => {
+      console.error('Error al buscar propiedades:', error);
+      throw new DatabaseError('Error al buscar propiedades');
+    });
+
+    // Procesar los resultados
+    const processedProperties = properties.map(property => ({
+      ...property,
+      amenities: property.amenities ? property.amenities.split(',') : [],
+      pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : [],
+      matches_found_in: [
+        property.title?.toLowerCase().includes(searchTerm.toLowerCase()) && 'title',
+        property.description?.toLowerCase().includes(searchTerm.toLowerCase()) && 'description',
+        property.address?.toLowerCase().includes(searchTerm.toLowerCase()) && 'address',
+        property.category?.toLowerCase().includes(searchTerm.toLowerCase()) && 'category',
+        property.property_type?.toLowerCase().includes(searchTerm.toLowerCase()) && 'property_type'
+      ].filter(Boolean)
+    }));
+    
+    connection.release();
+    return processedProperties;
+  } catch (error) {
+    throw error;
+  } finally {
+    if (connection) connection.release();
+  }
+}
   
   static async getFeaturedProperties(limit = 6, status = null) {
     try {

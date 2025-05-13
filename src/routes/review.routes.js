@@ -22,4 +22,7 @@ router.post('/', optionalAuth, validateReviewData, ReviewController.createReview
 router.put('/:id', authenticate, validateReviewData, ReviewController.updateReview);
 router.delete('/:id', authenticate, ReviewController.deleteReview);
 
+// Ruta para recalcular todos los ratings promedio
+router.post('/recalculate-ratings', authenticate, ReviewController.recalculateAllPropertyRatings);
+
 export default router;

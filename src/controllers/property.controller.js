@@ -54,7 +54,8 @@ export class PropertyController {
         (Array.isArray(req.query.pets) ? req.query.pets : [req.query.pets]) 
         : null,
       page: req.query.page || 1,
-      limit: req.query.limit || 10
+      limit: req.query.limit || 10,
+      sort: req.query.sort || 'newest' // Añadir parámetro de ordenación
     };
 
     const result = await PropertyService.getProperties(filters);
@@ -105,13 +106,22 @@ export class PropertyController {
 
   static searchProperties = asyncErrorHandler(async (req, res) => {
     const { q } = req.query;
-    const properties = await PropertyService.searchProperties(q);
+    const searchParams = {
+      page: req.query.page || 1,
+      limit: req.query.limit || 10,
+      sort: req.query.sort || 'newest'
+    };
+    
+    const properties = await PropertyService.searchProperties(q, null, searchParams);
     
     res.json({
       success: true,
       data: {
-        properties,
-        total: properties.length
+        properties: properties.properties || [],
+        total: properties.total || 0,
+        page: parseInt(searchParams.page),
+        limit: parseInt(searchParams.limit),
+        totalPages: Math.ceil((properties.total || 0) / parseInt(searchParams.limit))
       }
     });
   });
@@ -193,9 +203,6 @@ export class PropertyController {
     });
   });
 
-  /**
-   * Obtiene estadísticas del anfitrión
-   */
   static getHostStats = asyncErrorHandler(async (req, res) => {
     const { hostId } = req.params;
     const stats = await PropertyService.getHostStats(hostId || req.userId);
@@ -206,9 +213,6 @@ export class PropertyController {
     });
   });
 
-  /**
-   * Archivar una propiedad (ocultarla sin eliminarla)
-   */
   static archiveProperty = asyncErrorHandler(async (req, res) => {
     const { id } = req.params;
     const { reason } = req.body;
@@ -225,9 +229,6 @@ export class PropertyController {
     });
   });
 
-  /**
-   * Restaurar una propiedad archivada
-   */
   static restoreProperty = asyncErrorHandler(async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
@@ -244,9 +245,6 @@ export class PropertyController {
     });
   });
 
-  /**
-   * Obtener propiedades archivadas del usuario
-   */
   static getArchivedProperties = asyncErrorHandler(async (req, res) => {
     const pagination = {
       page: parseInt(req.query.page) || 1,
@@ -264,9 +262,6 @@ export class PropertyController {
     });
   });
 
-  /**
-   * Eliminación lógica de una propiedad
-   */
   static softDeleteProperty = asyncErrorHandler(async (req, res) => {
     const { id } = req.params;
     
@@ -281,9 +276,6 @@ export class PropertyController {
     });
   });
 
-  /**
-   * Incrementa el contador de vistas de una propiedad
-   */
   static incrementPropertyViews = asyncErrorHandler(async (req, res) => {
     const { id } = req.params;
     const success = await PropertyService.incrementPropertyViews(id);
@@ -294,9 +286,6 @@ export class PropertyController {
     });
   });
 
-  /**
-   * Obtiene propiedades similares a una dada
-   */
   static getSimilarProperties = asyncErrorHandler(async (req, res) => {
     const { id } = req.params;
     const { limit } = req.query;
@@ -312,9 +301,6 @@ export class PropertyController {
     });
   });
 
-  /**
-   * Actualiza el estado de múltiples propiedades a la vez
-   */
   static bulkUpdateStatus = asyncErrorHandler(async (req, res) => {
     const { propertyIds, status } = req.body;
     
@@ -330,9 +316,6 @@ export class PropertyController {
     });
   });
 
-  /**
-   * Destaca o quita destacado de una propiedad (solo admin)
-   */
   static toggleFeatured = asyncErrorHandler(async (req, res) => {
     const { id } = req.params;
     const { featured } = req.body;
@@ -349,9 +332,6 @@ export class PropertyController {
     });
   });
 
-  /**
-   * Verifica o quita verificación de una propiedad (solo admin)
-   */
   static toggleVerified = asyncErrorHandler(async (req, res) => {
     const { id } = req.params;
     const { verified } = req.body;
@@ -387,7 +367,8 @@ export class PropertyController {
         : null,
       pets: req.query.pets ? 
         (Array.isArray(req.query.pets) ? req.query.pets : [req.query.pets]) 
-        : null
+        : null,
+      sort: req.query.sort || 'newest' // Añadir parámetro de ordenación
     };
   
     const result = await PropertyService.getAllProperties(filters);
@@ -419,7 +400,8 @@ export class PropertyController {
     const { category } = req.params;
     const pagination = {
       page: parseInt(req.query.page) || 1,
-      limit: parseInt(req.query.limit) || 10
+      limit: parseInt(req.query.limit) || 10,
+      sort: req.query.sort || 'newest' // Añadir parámetro de ordenación
     };
     
     // Validar que la categoría sea una de las principales

@@ -169,7 +169,6 @@ export class Property {
     }
   }
 
-  // Obtener todas las propiedades con filtros opcionales
   static async findAll(filters = {}, pagination = {}) {
   try {
     const connection = await mysqlPool.getConnection();
@@ -388,8 +387,40 @@ export class Property {
     // Agrupar por ID de propiedad para evitar duplicados por los JOIN
     query += ' GROUP BY p.id';
     
-    // Ordenación - primero las destacadas (1), luego todas las demás (0 o NULL)
-    query += ' ORDER BY CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
+    // Aplicar ordenación según el parámetro sort
+    if (filters.sort) {
+      switch (filters.sort) {
+        case 'id-asc':
+          query += ' ORDER BY p.id ASC';
+          break;
+        case 'newest':
+          query += ' ORDER BY p.created_at DESC';
+          break;
+        case 'views-high':
+          query += ' ORDER BY p.views DESC';
+          break;
+        case 'views-low':
+          query += ' ORDER BY p.views ASC';
+          break;
+        case 'title-asc':
+          query += ' ORDER BY p.title ASC';
+          break;
+        case 'title-desc':
+          query += ' ORDER BY p.title DESC';
+          break;
+        case 'rating-high':
+          query += ' ORDER BY COALESCE(p.average_rating, 0) DESC';
+          break;
+        case 'rating-low':
+          query += ' ORDER BY COALESCE(p.average_rating, 0) ASC';
+          break;
+        default:
+          query += ' ORDER BY p.created_at DESC';
+      }
+    } else {
+      // Ordenación por defecto si no se especifica
+      query += ' ORDER BY p.created_at DESC';
+    }
     
     // Paginación
     if (pagination.limit) {
