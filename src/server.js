@@ -26,6 +26,7 @@ import { createPaymentTable } from './models/mysql/payment.model.js';
 import { createFavoritesTable } from './models/mysql/favorites.model.js';
 import { createBlogTable } from './models/mysql/blog.model.js';
 import { createEventTable } from './models/mysql/event.model.js';
+import { createCommentTable } from './models/mysql/comment.model.js';
 
 // Importar rutas
 import userRoutes from './routes/user.routes.js';
@@ -38,6 +39,7 @@ import authRoutes from './routes/auth.routes.js';
 import blogRoutes from './routes/blog.routes.js';
 import eventRoutes from './routes/event.routes.js';
 import adminRoutes from './routes/admin.routes.js'; // Importar las rutas de administrador
+import commentRoutes from './routes/comment.routes.js';
 
 const app = express();
 dotenv.config();
@@ -101,6 +103,8 @@ const initDatabase = async () => {
     
     // Crear tabla de eventos
     await createEventTable();
+
+    await createCommentTable();
     
     console.log('All tables created successfully');
   } catch (error) {
@@ -128,6 +132,8 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/messages', messageRoutes);
+
+app.use('/api/comments', commentRoutes);
 
 // Rutas de administrador (requieren autenticación y privilegios de admin)
 app.use('/api/admin', adminRoutes);
