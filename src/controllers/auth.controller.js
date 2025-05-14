@@ -1,10 +1,10 @@
 // src/controllers/auth.controller.js
-import authService from '../services/auth.service.js';
+import AuthService from '../services/auth.service.js';
 import { asyncErrorHandler } from '../utils/errors/error-handler.js';
 
 export class AuthController {
   static register = asyncErrorHandler(async (req, res) => {
-    const user = await authService.register(req.body);
+    const user = await AuthService.register(req.body);
     res.status(201).json({
       success: true,
       data: {
@@ -16,7 +16,7 @@ export class AuthController {
 
   static login = asyncErrorHandler(async (req, res) => {
     const { email, password } = req.body;
-    const result = await authService.login(email, password);
+    const result = await AuthService.login(email, password);
     res.json({
       success: true,
       data: result
@@ -33,7 +33,7 @@ export class AuthController {
 
   static getCurrentUser = asyncErrorHandler(async (req, res) => {
     const userId = req.userId;
-    const user = await authService.getUserById(userId);
+    const user = await AuthService.getUserById(userId);
     res.json({
       success: true,
       data: user
@@ -43,7 +43,7 @@ export class AuthController {
   static changePassword = asyncErrorHandler(async (req, res) => {
     const userId = req.userId;
     const { currentPassword, newPassword } = req.body;
-    await authService.changePassword(userId, currentPassword, newPassword);
+    await AuthService.changePassword(userId, currentPassword, newPassword);
     res.json({
       success: true,
       message: 'Contraseña actualizada exitosamente'
@@ -52,7 +52,7 @@ export class AuthController {
 
   static requestPasswordReset = asyncErrorHandler(async (req, res) => {
     const { email } = req.body;
-    const resetToken = await authService.requestPasswordReset(email);
+    const resetToken = await AuthService.requestPasswordReset(email);
     
     res.json({
       success: true,
@@ -63,7 +63,7 @@ export class AuthController {
 
   static resetPassword = asyncErrorHandler(async (req, res) => {
     const { token, newPassword } = req.body;
-    await authService.resetPassword(token, newPassword);
+    await AuthService.resetPassword(token, newPassword);
     res.json({
       success: true,
       message: 'Contraseña reseteada exitosamente'

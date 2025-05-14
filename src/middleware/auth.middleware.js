@@ -19,6 +19,7 @@ export const authenticate = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || '1234');
     req.userId = decoded.id;
+    req.userRole = decoded.role; // Guarda el rol del usuario en req
     next();
   } catch (error) {
     throw new AuthenticationError('Token inválido o expirado');
@@ -44,6 +45,7 @@ export const optionalAuth = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || '1234');
     req.userId = decoded.id;
+    req.userRole = decoded.role; // Guarda el rol del usuario en req
     next();
   } catch (error) {
     // Error de token - continuar como usuario no autenticado sin lanzar error
@@ -100,4 +102,32 @@ export const validatePasswordChange = (req, res, next) => {
   }
 
   next();
+};
+
+export const hasRole = (allowedRoles) => {
+  return (req, res, next) => {
+    // Primero verificar que el usuario esté autenticado
+    if (!req.userId) {
+      throw new AuthenticationError('No autenticado');
+    }
+    
+    // Obtener el token del encabezado de autorización
+    const authHeader = req.headers.authorization;
+    const token = authHeader.split(' ')[1];
+    
+    try {
+      // Decodificar el token para obtener los datos del usuario
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || '1234');
+      
+      // Verificar si el rol del usuario está en los roles permitidos
+      if (!decoded.role || !allowedRoles.includes(decoded.role)) {
+        throw new AuthenticationError('No tienes permisos para acceder a este recurso');
+      }
+      
+      // Si el rol es válido, continuar
+      next();
+    } catch (error) {
+      throw new AuthenticationError('No autorizado');
+    }
+  };
 };
