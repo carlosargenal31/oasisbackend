@@ -9,10 +9,13 @@ export class ReviewController {
    */
   static createReview = asyncErrorHandler(async (req, res) => {
     // Extraer datos de la solicitud
-    const { property_id, reviewer_name, email, rating, comment } = req.body;
+    const { property_id, rating, comment } = req.body;
+    
+    // El userId está disponible gracias al middleware authenticate
+    const userId = req.userId;
     
     // Validaciones básicas
-    if (!property_id || !reviewer_name || !rating) {
+    if (!property_id || !rating) {
       return res.status(400).json({
         success: false,
         message: 'Datos de reseña incompletos'
@@ -20,13 +23,29 @@ export class ReviewController {
     }
     
     try {
-      // Para reseñas públicas (no autenticadas)
-      // Usamos reviewer_id = 0 para indicar un usuario anónimo/público
+      // Obtener información del usuario desde la base de datos
+      const connection = await mysqlPool.getConnection();
+      const [userResult] = await connection.query(
+        'SELECT id, first_name, last_name, email FROM users WHERE id = ?',
+        [userId]
+      );
+      connection.release();
+      
+      if (userResult.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Usuario no encontrado'
+        });
+      }
+      
+      const user = userResult[0];
+      
+      // Crear la reseña con los datos del usuario
       const reviewId = await ReviewService.createReview({
         property_id: parseInt(property_id),
-        reviewer_id: req.userId || 0,
-        reviewer_name,
-        email,
+        reviewer_id: userId,
+        reviewer_name: `${user.first_name} ${user.last_name}`.trim(),
+        email: user.email,
         rating: parseInt(rating),
         comment
       });

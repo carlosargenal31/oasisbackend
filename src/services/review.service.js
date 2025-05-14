@@ -28,6 +28,11 @@ export class ReviewService {
       throw new ValidationError('El rating debe estar entre 1 y 5');
     }
 
+    // Si no se proporciona reviewer_id, es un error (requerimos autenticación)
+    if (!reviewData.reviewer_id) {
+      throw new ValidationError('Se requiere autenticación para dejar una reseña');
+    }
+
     const connection = await mysqlPool.getConnection();
     try {
       await connection.beginTransaction();
@@ -42,45 +47,40 @@ export class ReviewService {
         throw new NotFoundError('Propiedad no encontrada');
       }
 
-      // Si hay booking_id, verificar que la reserva exista
-      if (reviewData.booking_id) {
-        const [booking] = await connection.query(
-          'SELECT id, user_id, status FROM bookings WHERE id = ?',
-          [reviewData.booking_id]
-        );
+      // Verificar que el usuario existe
+      const [user] = await connection.query(
+        'SELECT id, first_name, last_name, email FROM users WHERE id = ?',
+        [reviewData.reviewer_id]
+      );
 
-        if (booking.length === 0) {
-          throw new NotFoundError('Reserva no encontrada');
-        }
+      if (user.length === 0) {
+        throw new NotFoundError('Usuario no encontrado');
+      }
 
-        if (booking[0].user_id !== reviewData.reviewer_id) {
-          throw new AuthorizationError('No autorizado para hacer reseña de esta reserva');
-        }
+      // Si no se proporcionaron reviewer_name y email, usar los datos del usuario
+      if (!reviewData.reviewer_name || !reviewData.email) {
+        reviewData.reviewer_name = `${user[0].first_name} ${user[0].last_name}`.trim();
+        reviewData.email = user[0].email;
+      }
 
-        if (booking[0].status !== 'completed') {
-          throw new ValidationError('Solo se pueden hacer reseñas de reservas completadas');
-        }
+      // Verificar si el usuario ya ha dejado una reseña para esta propiedad
+      const [existingReview] = await connection.query(
+        'SELECT id FROM reviews WHERE property_id = ? AND reviewer_id = ?',
+        [reviewData.property_id, reviewData.reviewer_id]
+      );
 
-        // Verificar si ya existe una reseña para esta reserva
-        const [existingReview] = await connection.query(
-          'SELECT id FROM reviews WHERE booking_id = ?',
-          [reviewData.booking_id]
-        );
-
-        if (existingReview.length > 0) {
-          throw new ConflictError('Ya existe una reseña para esta reserva');
-        }
+      if (existingReview.length > 0) {
+        throw new ConflictError('Ya has dejado una reseña para esta propiedad. Puedes editarla si deseas.');
       }
 
       // Crear la reseña
       const [result] = await connection.query(
         `INSERT INTO reviews 
-         (property_id, booking_id, reviewer_id, reviewer_name, email, rating, comment)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (property_id, reviewer_id, reviewer_name, email, rating, comment)
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [
           reviewData.property_id,
-          reviewData.booking_id || null,
-          reviewData.reviewer_id || 0, // Usar 0 para usuario anónimo
+          reviewData.reviewer_id,
           reviewData.reviewer_name,
           reviewData.email || null,
           reviewData.rating,
@@ -118,7 +118,8 @@ export class ReviewService {
         SELECT r.*, 
                p.title as property_title,
                u.first_name as reviewer_first_name,
-               u.last_name as reviewer_last_name 
+               u.last_name as reviewer_last_name,
+               u.profile_image
         FROM reviews r 
         JOIN properties p ON r.property_id = p.id
         LEFT JOIN users u ON r.reviewer_id = u.id
@@ -173,9 +174,13 @@ export class ReviewService {
     const connection = await mysqlPool.getConnection();
     try {
       const [review] = await connection.query(
-        `SELECT r.*, p.title as property_title 
+        `SELECT r.*, p.title as property_title,
+                u.first_name as reviewer_first_name,
+                u.last_name as reviewer_last_name,
+                u.profile_image 
          FROM reviews r 
-         JOIN properties p ON r.property_id = p.id 
+         JOIN properties p ON r.property_id = p.id
+         LEFT JOIN users u ON r.reviewer_id = u.id 
          WHERE r.id = ?`,
         [id]
       ).catch(error => {
@@ -223,8 +228,17 @@ export class ReviewService {
         throw new NotFoundError('Reseña no encontrada');
       }
 
+      // Verificar si el usuario es el autor o un administrador
       if (review[0].reviewer_id !== userId) {
-        throw new AuthorizationError('No autorizado para actualizar esta reseña');
+        // Comprobar si es administrador
+        const [user] = await connection.query(
+          'SELECT role FROM users WHERE id = ?',
+          [userId]
+        );
+
+        if (user.length === 0 || (user[0].role !== 'admin' && user[0].role !== 'owner')) {
+          throw new AuthorizationError('No autorizado para actualizar esta reseña');
+        }
       }
 
       const propertyId = review[0].property_id;
@@ -254,7 +268,7 @@ export class ReviewService {
       
       // Actualizar la reseña
       const [result] = await connection.query(
-        `UPDATE reviews SET ${updateFields.join(', ')} WHERE id = ?`,
+        `UPDATE reviews SET ${updateFields.join(', ')}, updated_at = NOW() WHERE id = ?`,
         updateValues
       ).catch(error => {
         console.error('Error al actualizar la reseña:', error);
@@ -301,8 +315,17 @@ export class ReviewService {
         throw new NotFoundError('Reseña no encontrada');
       }
 
+      // Verificar si el usuario es el autor o un administrador
       if (review[0].reviewer_id !== userId) {
-        throw new AuthorizationError('No autorizado para eliminar esta reseña');
+        // Comprobar si es administrador
+        const [user] = await connection.query(
+          'SELECT role FROM users WHERE id = ?',
+          [userId]
+        );
+
+        if (user.length === 0 || (user[0].role !== 'admin' && user[0].role !== 'owner')) {
+          throw new AuthorizationError('No autorizado para eliminar esta reseña');
+        }
       }
 
       const propertyId = review[0].property_id;
@@ -398,6 +421,90 @@ export class ReviewService {
       });
 
       return result.affectedRows > 0;
+    } finally {
+      connection.release();
+    }
+  }
+
+  /**
+   * Quita un like de una reseña
+   * @param {number} id - ID de la reseña
+   * @returns {Promise<boolean>} - Resultado de la operación
+   */
+  static async unlikeReview(id) {
+    if (!id) {
+      throw new ValidationError('ID de reseña es requerido');
+    }
+
+    const connection = await mysqlPool.getConnection();
+    try {
+      // Verificar si la reseña existe
+      const [review] = await connection.query(
+        'SELECT id, likes FROM reviews WHERE id = ?',
+        [id]
+      );
+
+      if (review.length === 0) {
+        throw new NotFoundError('Reseña no encontrada');
+      }
+
+      // Solo decrementar si hay likes
+      if (review[0].likes > 0) {
+        // Decrementar los likes
+        const [result] = await connection.query(
+          'UPDATE reviews SET likes = likes - 1 WHERE id = ? AND likes > 0',
+          [id]
+        ).catch(error => {
+          console.error('Error al quitar like a la reseña:', error);
+          throw new DatabaseError('Error al quitar like a la reseña');
+        });
+
+        return result.affectedRows > 0;
+      }
+      
+      return false;
+    } finally {
+      connection.release();
+    }
+  }
+
+  /**
+   * Quita un dislike de una reseña
+   * @param {number} id - ID de la reseña
+   * @returns {Promise<boolean>} - Resultado de la operación
+   */
+  static async undislikeReview(id) {
+    if (!id) {
+      throw new ValidationError('ID de reseña es requerido');
+    }
+
+    const connection = await mysqlPool.getConnection();
+    try {
+      // Verificar si la reseña existe
+      const [review] = await connection.query(
+        'SELECT id, dislikes FROM reviews WHERE id = ?',
+        [id]
+      );
+
+      if (review.length === 0) {
+        throw new NotFoundError('Reseña no encontrada');
+      }
+
+      // Solo decrementar si hay dislikes
+      if (review[0].dislikes > 0) {
+        // Decrementar los dislikes
+        const [result] = await connection.query(
+          'UPDATE reviews SET dislikes = dislikes - 1 WHERE id = ? AND dislikes > 0',
+          [id]
+        ).catch(error => {
+          console.error('Error al quitar dislike a la reseña:', error);
+          throw new DatabaseError('Error al quitar dislike a la reseña');
+        });
+
+        return result.affectedRows > 0;
+      }
+      
+      return false;
     } finally {
       connection.release();
     }
