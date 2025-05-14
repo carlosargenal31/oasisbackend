@@ -423,6 +423,23 @@ static searchProperties = asyncErrorHandler(async (req, res) => {
       data: result
     });
   });
+
+    static getMainFeaturedCategories = asyncErrorHandler(async (req, res) => {
+    const pagination = {
+      page: parseInt(req.query.page) || 1,
+      limit: parseInt(req.query.limit) || 10
+    };
+    
+    const result = await PropertyService.getPropertiesByMainFeaturedCategories(
+      null, // Sin filtro de categoría específica
+      pagination
+    );
+    
+    res.json({
+      success: true,
+      data: result
+    });
+  });
   
   // Actualización para property.controller.js
 // Mejora en el método getPropertiesByCategory para manejar filtros de tipos específicos

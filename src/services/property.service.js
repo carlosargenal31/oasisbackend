@@ -1536,4 +1536,175 @@ static async getPropertiesByMainCategories(category = null, filters = {}) {
   }
 }
   
+
+static async getPropertiesByMainFeaturedCategories(category = null, filters = {}) {
+  try {
+    const apiFilters = {
+      ...filters
+    };
+    
+    // Si se proporciona una categoría específica, filtrar por ella
+    if (category) {
+      apiFilters.category = category;
+    } else {
+      // Si no se proporciona categoría, filtramos por las tres principales
+      apiFilters.categoryList = ['Restaurante y bar', 'Alojamiento', 'Entretenimiento'];
+    }
+    
+    // Calcular offset para paginación
+    const limit = parseInt(filters.limit || 10);
+    const page = parseInt(filters.page || 1);
+    const offset = (page - 1) * limit;
+    
+    const connection = await mysqlPool.getConnection();
+    
+    let query = `
+      SELECT p.*, 
+             GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
+             GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
+      FROM properties p
+      LEFT JOIN property_amenities pa ON p.id = pa.property_id
+      LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+      WHERE (p.archived IS NULL OR p.archived = FALSE) AND p.isFeatured = 1
+    `;
+    
+    const queryParams = [];
+    
+    // Aplicar filtro de categoría
+    if (category) {
+      query += ' AND p.category = ?';
+      queryParams.push(category);
+    } else if (apiFilters.categoryList) {
+      query += ` AND p.category IN (${apiFilters.categoryList.map(() => '?').join(',')})`;
+      queryParams.push(...apiFilters.categoryList);
+    }
+    
+    // IMPORTANTE: Añadir filtro de property_type si existe
+    if (apiFilters.property_type) {
+      if (Array.isArray(apiFilters.property_type)) {
+        // Si es un array de tipos, usar IN
+        if (apiFilters.property_type.length > 0) {
+          query += ` AND p.property_type IN (${apiFilters.property_type.map(() => '?').join(',')})`;
+          queryParams.push(...apiFilters.property_type);
+        }
+      } else {
+        // Si es un solo tipo, usar igualdad
+        query += ' AND p.property_type = ?';
+        queryParams.push(apiFilters.property_type);
+      }
+      
+      console.log(`SQL: Filtro de tipo aplicado: ${JSON.stringify(apiFilters.property_type)}`);
+    }
+    
+    // Agrupar y ordenar
+    query += ' GROUP BY p.id';
+    
+    // Aplicar ordenación según el parámetro sort
+    if (apiFilters.sort) {
+      switch (apiFilters.sort) {
+        case 'views-high':
+          query += ' ORDER BY p.views DESC';
+          break;
+        case 'views-low':
+          query += ' ORDER BY p.views ASC';
+          break;
+        case 'title-asc':
+          query += ' ORDER BY p.title ASC';
+          break;
+        case 'title-desc':
+          query += ' ORDER BY p.title DESC';
+          break;
+        case 'rating-high':
+          query += ' ORDER BY COALESCE(p.average_rating, 0) DESC';
+          break;
+        case 'rating-low':
+          query += ' ORDER BY COALESCE(p.average_rating, 0) ASC';
+          break;
+        case 'newest':
+        default:
+          query += ' ORDER BY CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
+      }
+    } else {
+      query += ' ORDER BY CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
+    }
+    
+    // Aplicar paginación
+    query += ' LIMIT ? OFFSET ?';
+    queryParams.push(limit, offset);
+    
+    // Ejecutar consulta
+    console.log('SQL Query:', query);
+    console.log('SQL Params:', queryParams);
+    
+    const [properties] = await connection.query(query, queryParams);
+    
+    // Consulta para obtener el total sin paginación
+    let countQuery = `
+      SELECT COUNT(DISTINCT p.id) as total 
+      FROM properties p
+      WHERE (p.archived IS NULL OR p.archived = FALSE)
+    `;
+    
+    const countParams = [];
+    
+    if (category) {
+      countQuery += ' AND p.category = ?';
+      countParams.push(category);
+    } else if (apiFilters.categoryList) {
+      countQuery += ` AND p.category IN (${apiFilters.categoryList.map(() => '?').join(',')})`;
+      countParams.push(...apiFilters.categoryList);
+    }
+    
+    // Añadir mismo filtro de property_type a la consulta de conteo
+    if (apiFilters.property_type) {
+      if (Array.isArray(apiFilters.property_type)) {
+        if (apiFilters.property_type.length > 0) {
+          countQuery += ` AND p.property_type IN (${apiFilters.property_type.map(() => '?').join(',')})`;
+          countParams.push(...apiFilters.property_type);
+        }
+      } else {
+        countQuery += ' AND p.property_type = ?';
+        countParams.push(apiFilters.property_type);
+      }
+    }
+    
+    const [countResult] = await connection.query(countQuery, countParams);
+    const total = countResult[0]?.total || 0;
+    
+    connection.release();
+    
+    // Procesar propiedades
+    const processedProperties = properties.map(property => ({
+      ...property,
+      amenities: property.amenities ? property.amenities.split(',') : [],
+      pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : []
+    }));
+    
+    // Debug: Verificar filtrado
+    if (apiFilters.property_type && processedProperties.length > 0) {
+      console.log('Tipos de propiedades en el resultado:');
+      const tiposPropiedades = {};
+      processedProperties.forEach(p => {
+        if (!tiposPropiedades[p.property_type]) {
+          tiposPropiedades[p.property_type] = 0;
+        }
+        tiposPropiedades[p.property_type]++;
+      });
+      console.log(tiposPropiedades);
+    }
+    
+    return {
+      properties: processedProperties,
+      total,
+      page: parseInt(filters.page || 1),
+      limit,
+      totalPages: Math.ceil(total / limit)
+    };
+  } catch (error) {
+    console.error('Error al obtener propiedades por categorías principales:', error);
+    throw error;
+  }
+}
+
+
 }
