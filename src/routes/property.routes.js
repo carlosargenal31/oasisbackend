@@ -33,7 +33,8 @@ router.get('/stats', PropertyController.getPropertyStats);
 
 // Agregar las rutas de categorías
 router.get('/categories', PropertyController.getMainCategories);
-router.get('/categories/featured', PropertyController.getMainFeaturedCategories);
+router.get('/categories/featured', PropertyController.getMainFeaturedCategories); 
+router.get('/categories/featured/:category', PropertyController.getPropertiesByFeaturedCategory);
 router.get('/categories/:category', PropertyController.getPropertiesByCategory);
 
 router.get('/user/archived', authenticate, PropertyController.getArchivedProperties);

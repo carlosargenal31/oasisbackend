@@ -444,6 +444,72 @@ static searchProperties = asyncErrorHandler(async (req, res) => {
   // Actualización para property.controller.js
 // Mejora en el método getPropertiesByCategory para manejar filtros de tipos específicos
 
+static getPropertiesByFeaturedCategory = asyncErrorHandler(async (req, res) => {
+  const { category } = req.params;
+  const pagination = {
+    page: parseInt(req.query.page) || 1,
+    limit: parseInt(req.query.limit) || 10,
+    sort: req.query.sort || 'newest'
+  };
+  
+  // Validar que la categoría sea una de las principales
+  const mainCategories = ['Restaurante y bar', 'Alojamiento', 'Entretenimiento'];
+  if (!mainCategories.includes(category)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Categoría no válida. Debe ser una de: ' + mainCategories.join(', ')
+    });
+  }
+  
+  // Incluir también el filtro de tipo de propiedad si está presente
+  const filters = {
+    category: category,
+    property_type: req.query.property_type || null,
+    page: pagination.page,
+    limit: pagination.limit,
+    sort: pagination.sort
+  };
+  
+  // Registro para depuración
+  console.log(`API: Filtro de categoría: ${category}`);
+  console.log(`API: Filtro de tipo: ${JSON.stringify(req.query.property_type)}`);
+  
+  try {
+    const result = await PropertyService.getPropertiesByMainFeaturedCategories(
+      category,
+      filters
+    );
+    
+    // Verificar si hay resultados
+    if (!result.properties || result.properties.length === 0) {
+      console.log(`API: No se encontraron propiedades para ${category} con filtros:`, filters);
+    } else {
+      console.log(`API: Encontradas ${result.properties.length} propiedades para ${category}`);
+      // Mostrar tipos de propiedades devueltas para depuración
+      const tiposPropiedades = {};
+      result.properties.forEach(p => {
+        if (!tiposPropiedades[p.property_type]) {
+          tiposPropiedades[p.property_type] = 0;
+        }
+        tiposPropiedades[p.property_type]++;
+      });
+      console.log('API: Tipos de propiedades devueltas:', tiposPropiedades);
+    }
+    
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error al obtener propiedades por categoría:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener propiedades por categoría',
+      error: error.message
+    });
+  }
+});
+
 static getPropertiesByCategory = asyncErrorHandler(async (req, res) => {
   const { category } = req.params;
   const pagination = {
@@ -509,4 +575,5 @@ static getPropertiesByCategory = asyncErrorHandler(async (req, res) => {
     });
   }
 });
+
 }
