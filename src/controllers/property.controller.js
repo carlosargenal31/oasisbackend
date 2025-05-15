@@ -165,6 +165,31 @@ static searchProperties = asyncErrorHandler(async (req, res) => {
     });
   }
 });
+// En property.controller.js, añadir nuevo método
+static getPropertyAmenities = asyncErrorHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  // Obtener amenidades de la propiedad desde la tabla property_amenities
+  const connection = await mysqlPool.getConnection();
+  try {
+    const [amenities] = await connection.query(
+      'SELECT property_id, amenity FROM property_amenities WHERE property_id = ?',
+      [id]
+    );
+    
+    connection.release();
+    
+    res.json({
+      success: true,
+      data: amenities || []
+    });
+  } catch (error) {
+    console.error('Error al obtener amenidades:', error);
+    throw error;
+  } finally {
+    if (connection) connection.release();
+  }
+});
   
   static addPropertyImage = asyncErrorHandler(async (req, res) => {
     const { id } = req.params;

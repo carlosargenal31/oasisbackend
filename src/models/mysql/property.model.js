@@ -321,49 +321,56 @@ export class Property {
 
   // Encontrar una propiedad por ID
   static async findById(id) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      // Obtener la propiedad con amenidades y mascotas permitidas
-      const [properties] = await connection.query(
-        `SELECT p.*, 
-                GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
-                GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
-         FROM properties p
-         LEFT JOIN property_amenities pa ON p.id = pa.property_id
-         LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
-         WHERE p.id = ?
-         GROUP BY p.id`,
-        [id]
-      );
-      
-      if (properties.length === 0) {
-        connection.release();
-        return null;
-      }
-      
-      // Obtener imágenes adicionales
-      const [images] = await connection.query(
-        `SELECT image_url, is_primary FROM property_images WHERE property_id = ? ORDER BY is_primary DESC`,
-        [id]
-      );
-      
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    // Obtener la propiedad con amenidades y mascotas permitidas
+    const [properties] = await connection.query(
+      `SELECT p.*, 
+              GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
+              GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
+       FROM properties p
+       LEFT JOIN property_amenities pa ON p.id = pa.property_id
+       LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+       WHERE p.id = ?
+       GROUP BY p.id`,
+      [id]
+    );
+    
+    if (properties.length === 0) {
       connection.release();
-      
-      // Procesar y devolver resultado
-      const property = {
-        ...properties[0],
-        amenities: properties[0].amenities ? properties[0].amenities.split(',') : [],
-        pets_allowed: properties[0].pets_allowed ? properties[0].pets_allowed.split(',') : [],
-        additional_images: images.map(img => img.image_url)
-      };
-      
-      return property;
-    } catch (error) {
-      console.error('Error finding property by ID:', error);
-      throw error;
+      return null;
     }
+    
+    // Obtener imágenes adicionales
+    const [images] = await connection.query(
+      `SELECT image_url, is_primary FROM property_images WHERE property_id = ? ORDER BY is_primary DESC`,
+      [id]
+    );
+    
+    // Obtener amenidades como objetos separados para mayor detalle
+    const [amenities] = await connection.query(
+      `SELECT property_id, amenity FROM property_amenities WHERE property_id = ?`,
+      [id]
+    );
+    
+    connection.release();
+    
+    // Procesar y devolver resultado
+    const property = {
+      ...properties[0],
+      amenities: properties[0].amenities ? properties[0].amenities.split(',') : [],
+      amenities_objects: amenities || [],
+      pets_allowed: properties[0].pets_allowed ? properties[0].pets_allowed.split(',') : [],
+      additional_images: images.map(img => img.image_url)
+    };
+    
+    return property;
+  } catch (error) {
+    console.error('Error finding property by ID:', error);
+    throw error;
   }
+}
 
   // Eliminar una propiedad
   static async delete(id) {

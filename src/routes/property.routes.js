@@ -57,6 +57,8 @@ router.delete('/:id', authenticate, PropertyController.deleteProperty);
 router.patch('/:id/archive', authenticate, PropertyController.archiveProperty);
 router.patch('/:id/restore', authenticate, PropertyController.restoreProperty);
 router.delete('/:id/soft', authenticate, PropertyController.softDeleteProperty);
+// En property.routes.js, añadir esta ruta antes de las rutas con :id
+router.get('/:id/amenities', PropertyController.getPropertyAmenities);
 
 // Rutas para imágenes
 router.post('/:id/images', authenticate, upload.single('image'), PropertyController.addPropertyImage);

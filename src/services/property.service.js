@@ -13,10 +13,22 @@ import { Property } from '../models/mysql/property.model.js';
 
 export class PropertyService {
   // Actualización para el método createProperty en property.service.js
+// En el método createProperty de property.service.js
 static async createProperty(propertyData, imageFile, additionalImageFiles = []) {
   // Validaciones mínimas
   if (!propertyData.title) {
     throw new ValidationError('Se requiere al menos un título para la propiedad');
+  }
+  
+  // Extraer amenidades si existen y luego eliminarlas del propertyData
+  let amenities = [];
+  if (propertyData.amenities) {
+    if (Array.isArray(propertyData.amenities)) {
+      amenities = propertyData.amenities;
+    } else if (typeof propertyData.amenities === 'string') {
+      amenities = [propertyData.amenities];
+    }
+    delete propertyData.amenities;
   }
   
   // Eliminar host_id si está presente en los datos
@@ -25,11 +37,6 @@ static async createProperty(propertyData, imageFile, additionalImageFiles = []) 
   }
 
   // Convertir valores booleanos de string a valores booleanos reales
-  // Esto soluciona el problema con MySQL
-  if (propertyData.isNew !== undefined) {
-    propertyData.isNew = propertyData.isNew === 'true' || propertyData.isNew === true || propertyData.isNew === 1 ? 1 : 0;
-  }
-  
   if (propertyData.isFeatured !== undefined) {
     propertyData.isFeatured = propertyData.isFeatured === 'true' || propertyData.isFeatured === true || propertyData.isFeatured === 1 ? 1 : 0;
   }
@@ -92,26 +99,14 @@ static async createProperty(propertyData, imageFile, additionalImageFiles = []) 
       }
     }
     
-    // Insertar amenidades si existen
-    if (propertyData.amenities && Array.isArray(propertyData.amenities) && propertyData.amenities.length > 0) {
-      const amenityValues = propertyData.amenities.map(amenity => [propertyId, amenity]);
+    // Insertar amenidades
+    if (amenities.length > 0) {
+      const amenityValues = amenities.map(amenity => [propertyId, amenity]);
       await connection.query(
         `INSERT INTO property_amenities (property_id, amenity) VALUES ?`,
         [amenityValues]
       ).catch(error => {
         console.error('Error al insertar amenidades:', error);
-        // No lanzamos error para no interrumpir la creación de la propiedad
-      });
-    }
-    
-    // Insertar mascotas permitidas si existen
-    if (propertyData.pets_allowed && Array.isArray(propertyData.pets_allowed) && propertyData.pets_allowed.length > 0) {
-      const petsValues = propertyData.pets_allowed.map(pet => [propertyId, pet]);
-      await connection.query(
-        `INSERT INTO property_pets_allowed (property_id, pet_type) VALUES ?`,
-        [petsValues]
-      ).catch(error => {
-        console.error('Error al insertar mascotas permitidas:', error);
         // No lanzamos error para no interrumpir la creación de la propiedad
       });
     }
@@ -123,12 +118,11 @@ static async createProperty(propertyData, imageFile, additionalImageFiles = []) 
       imageUrl,
       additionalImageUrls
     };
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
+  } catch (error) {await connection.rollback();
+   throw error;
+ } finally {
+   connection.release();
+ }
 }
 
   static async getProperties(filters = {}) {
@@ -354,17 +348,27 @@ static async toggleFeatured(id, featured, userId) {
   }
 }
 
-// Función updateProperty modificada
 static async updateProperty(id, propertyData, imageFile, userId) {
   if (!id) {
     throw new ValidationError('ID de propiedad es requerido');
+  }
+
+  // Extraer amenidades si existen y luego eliminarlas del propertyData
+  let amenities = [];
+  if (propertyData.amenities) {
+    if (Array.isArray(propertyData.amenities)) {
+      amenities = propertyData.amenities;
+    } else if (typeof propertyData.amenities === 'string') {
+      amenities = [propertyData.amenities];
+    }
+    delete propertyData.amenities;
   }
 
   const connection = await mysqlPool.getConnection();
   try {
     await connection.beginTransaction();
     
-    // Verificar si la propiedad existe, sin verificar host_id
+    // Verificar si la propiedad existe
     const [property] = await connection.query(
       'SELECT id, image FROM properties WHERE id = ?',
       [id]
@@ -373,20 +377,10 @@ static async updateProperty(id, propertyData, imageFile, userId) {
     if (property.length === 0) {
       throw new NotFoundError('Propiedad no encontrada');
     }
-
-    // No verificar autorización por host_id, cualquier admin puede actualizar
     
     // Convertir valores booleanos
-    if (propertyData.isNew !== undefined) {
-      propertyData.isNew = propertyData.isNew === 'true' || propertyData.isNew === true || propertyData.isNew === 1 ? 1 : 0;
-    }
-    
     if (propertyData.isFeatured !== undefined) {
       propertyData.isFeatured = propertyData.isFeatured === 'true' || propertyData.isFeatured === true || propertyData.isFeatured === 1 ? 1 : 0;
-    }
-    
-    if (propertyData.isVerified !== undefined) {
-      propertyData.isVerified = propertyData.isVerified === 'true' || propertyData.isVerified === true || propertyData.isVerified === 1 ? 1 : 0;
     }
     
     // Si hay un archivo de imagen, subirlo a Azure
@@ -408,8 +402,8 @@ static async updateProperty(id, propertyData, imageFile, userId) {
     // Actualizar la propiedad
     await Property.update(id, propertyData);
     
-    // Si hay amenidades nuevas, actualizar
-    if (propertyData.amenities && Array.isArray(propertyData.amenities)) {
+    // Actualizar amenidades
+    if (amenities.length > 0) {
       // Eliminar amenidades existentes
       await connection.query(
         'DELETE FROM property_amenities WHERE property_id = ?',
@@ -417,37 +411,14 @@ static async updateProperty(id, propertyData, imageFile, userId) {
       );
       
       // Insertar nuevas amenidades
-      if (propertyData.amenities.length > 0) {
-        const amenityValues = propertyData.amenities.map(amenity => [id, amenity]);
-        await connection.query(
-          `INSERT INTO property_amenities (property_id, amenity) VALUES ?`,
-          [amenityValues]
-        ).catch(error => {
-          console.error('Error al insertar amenidades:', error);
-          // No lanzamos error para no interrumpir la actualización
-        });
-      }
-    }
-    
-    // Si hay mascotas permitidas nuevas, actualizar
-    if (propertyData.pets_allowed && Array.isArray(propertyData.pets_allowed)) {
-      // Eliminar registros existentes
+      const amenityValues = amenities.map(amenity => [id, amenity]);
       await connection.query(
-        'DELETE FROM property_pets_allowed WHERE property_id = ?',
-        [id]
-      );
-      
-      // Insertar nuevos registros
-      if (propertyData.pets_allowed.length > 0) {
-        const petsValues = propertyData.pets_allowed.map(pet => [id, pet]);
-        await connection.query(
-          `INSERT INTO property_pets_allowed (property_id, pet_type) VALUES ?`,
-          [petsValues]
-        ).catch(error => {
-          console.error('Error al insertar mascotas permitidas:', error);
-          // No lanzamos error para no interrumpir la actualización
-        });
-      }
+        `INSERT INTO property_amenities (property_id, amenity) VALUES ?`,
+        [amenityValues]
+      ).catch(error => {
+        console.error('Error al insertar amenidades:', error);
+        // No lanzamos error para no interrumpir la actualización
+      });
     }
     
     await connection.commit();
