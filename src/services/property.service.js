@@ -12,122 +12,124 @@ import {
 import { Property } from '../models/mysql/property.model.js';
 
 export class PropertyService {
-  static async createProperty(propertyData, imageFile, additionalImageFiles = []) {
-    // Validaciones mínimas
-    if (!propertyData.title) {
-      throw new ValidationError('Se requiere al menos un título para la propiedad');
-    }
+  // Actualización para el método createProperty en property.service.js
+static async createProperty(propertyData, imageFile, additionalImageFiles = []) {
+  // Validaciones mínimas
+  if (!propertyData.title) {
+    throw new ValidationError('Se requiere al menos un título para la propiedad');
+  }
   
-    // Convertir valores booleanos de string a valores booleanos reales
-    // Esto soluciona el problema con MySQL
-    if (propertyData.isNew !== undefined) {
-      propertyData.isNew = propertyData.isNew === 'true' || propertyData.isNew === true || propertyData.isNew === 1 ? 1 : 0;
+  // Eliminar host_id si está presente en los datos
+  if (propertyData.host_id !== undefined) {
+    delete propertyData.host_id;
+  }
+
+  // Convertir valores booleanos de string a valores booleanos reales
+  // Esto soluciona el problema con MySQL
+  if (propertyData.isNew !== undefined) {
+    propertyData.isNew = propertyData.isNew === 'true' || propertyData.isNew === true || propertyData.isNew === 1 ? 1 : 0;
+  }
+  
+  if (propertyData.isFeatured !== undefined) {
+    propertyData.isFeatured = propertyData.isFeatured === 'true' || propertyData.isFeatured === true || propertyData.isFeatured === 1 ? 1 : 0;
+  }
+  
+  const connection = await mysqlPool.getConnection();
+  try {
+    await connection.beginTransaction();
+    
+    // Si hay un archivo de imagen, subirlo a Azure
+    let imageUrl = null;
+    if (imageFile) {
+      // Usar un ID temporal para la creación inicial
+      const tempId = Date.now();
+      imageUrl = await azureStorageService.uploadImage(imageFile, tempId);
+      propertyData.image = imageUrl;
     }
     
-    if (propertyData.isFeatured !== undefined) {
-      propertyData.isFeatured = propertyData.isFeatured === 'true' || propertyData.isFeatured === true || propertyData.isFeatured === 1 ? 1 : 0;
-    }
+    // Inicializar vistas en 0
+    propertyData.views = 0;
     
-    if (propertyData.isVerified !== undefined) {
-      propertyData.isVerified = propertyData.isVerified === 'true' || propertyData.isVerified === true || propertyData.isVerified === 1 ? 1 : 0;
+    // Insertar la propiedad usando el método del modelo
+    const propertyId = await Property.create(propertyData);
+    
+    // Si se subió una imagen con un ID temporal, actualizar la URL
+    if (imageUrl && imageFile) {
+      // Subir la imagen de nuevo con el ID correcto
+      const finalImageUrl = await azureStorageService.uploadImage(imageFile, propertyId);
+      
+      // Actualizar la URL en la base de datos
+      await connection.query(
+        `UPDATE properties SET image = ? WHERE id = ?`,
+        [finalImageUrl, propertyId]
+      );
+      
+      // Eliminar la imagen temporal
+      await azureStorageService.deleteImage(imageUrl);
+      
+      imageUrl = finalImageUrl;
     }
   
-    const connection = await mysqlPool.getConnection();
-    try {
-      await connection.beginTransaction();
-      
-      // Si hay un archivo de imagen, subirlo a Azure
-      let imageUrl = null;
-      if (imageFile) {
-        // Usar un ID temporal para la creación inicial
-        const tempId = Date.now();
-        imageUrl = await azureStorageService.uploadImage(imageFile, tempId);
-        propertyData.image = imageUrl;
-      }
-      
-      // Inicializar vistas en 0
-      propertyData.views = 0;
-      
-      // Insertar la propiedad usando el método del modelo
-      const propertyId = await Property.create(propertyData);
-      
-      // Si se subió una imagen con un ID temporal, actualizar la URL
-      if (imageUrl && imageFile) {
-        // Subir la imagen de nuevo con el ID correcto
-        const finalImageUrl = await azureStorageService.uploadImage(imageFile, propertyId);
-        
-        // Actualizar la URL en la base de datos
-        await connection.query(
-          `UPDATE properties SET image = ? WHERE id = ?`,
-          [finalImageUrl, propertyId]
-        );
-        
-        // Eliminar la imagen temporal
-        await azureStorageService.deleteImage(imageUrl);
-        
-        imageUrl = finalImageUrl;
-      }
-  
-      // Procesar imágenes adicionales
-      const additionalImageUrls = [];
-      if (additionalImageFiles && additionalImageFiles.length > 0) {
-        for (const file of additionalImageFiles) {
-          try {
-            // Subir imagen adicional
-            const additionalImageUrl = await azureStorageService.uploadImage(file, `${propertyId}-additional-${Date.now()}`);
-            
-            // Insertar en la tabla property_images
-            await connection.query(
-              `INSERT INTO property_images (property_id, image_url, is_primary) VALUES (?, ?, ?)`,
-              [propertyId, additionalImageUrl, false]
-            );
-            
-            additionalImageUrls.push(additionalImageUrl);
-          } catch (error) {
-            console.error('Error al procesar imagen adicional:', error);
-            // Continuamos con las siguientes imágenes si hay error
-          }
+    // Procesar imágenes adicionales
+    const additionalImageUrls = [];
+    if (additionalImageFiles && additionalImageFiles.length > 0) {
+      for (const file of additionalImageFiles) {
+        try {
+          // Subir imagen adicional
+          const additionalImageUrl = await azureStorageService.uploadImage(file, `${propertyId}-additional-${Date.now()}`);
+          
+          // Insertar en la tabla property_images
+          await connection.query(
+            `INSERT INTO property_images (property_id, image_url, is_primary) VALUES (?, ?, ?)`,
+            [propertyId, additionalImageUrl, false]
+          );
+          
+          additionalImageUrls.push(additionalImageUrl);
+        } catch (error) {
+          console.error('Error al procesar imagen adicional:', error);
+          // Continuamos con las siguientes imágenes si hay error
         }
       }
-      
-      // Insertar amenidades si existen
-      if (propertyData.amenities && Array.isArray(propertyData.amenities) && propertyData.amenities.length > 0) {
-        const amenityValues = propertyData.amenities.map(amenity => [propertyId, amenity]);
-        await connection.query(
-          `INSERT INTO property_amenities (property_id, amenity) VALUES ?`,
-          [amenityValues]
-        ).catch(error => {
-          console.error('Error al insertar amenidades:', error);
-          // No lanzamos error para no interrumpir la creación de la propiedad
-        });
-      }
-      
-      // Insertar mascotas permitidas si existen
-      if (propertyData.pets_allowed && Array.isArray(propertyData.pets_allowed) && propertyData.pets_allowed.length > 0) {
-        const petsValues = propertyData.pets_allowed.map(pet => [propertyId, pet]);
-        await connection.query(
-          `INSERT INTO property_pets_allowed (property_id, pet_type) VALUES ?`,
-          [petsValues]
-        ).catch(error => {
-          console.error('Error al insertar mascotas permitidas:', error);
-          // No lanzamos error para no interrumpir la creación de la propiedad
-        });
-      }
-      
-      await connection.commit();
-      
-      return {
-        propertyId,
-        imageUrl,
-        additionalImageUrls
-      };
-    } catch (error) {
-      await connection.rollback();
-      throw error;
-    } finally {
-      connection.release();
     }
+    
+    // Insertar amenidades si existen
+    if (propertyData.amenities && Array.isArray(propertyData.amenities) && propertyData.amenities.length > 0) {
+      const amenityValues = propertyData.amenities.map(amenity => [propertyId, amenity]);
+      await connection.query(
+        `INSERT INTO property_amenities (property_id, amenity) VALUES ?`,
+        [amenityValues]
+      ).catch(error => {
+        console.error('Error al insertar amenidades:', error);
+        // No lanzamos error para no interrumpir la creación de la propiedad
+      });
+    }
+    
+    // Insertar mascotas permitidas si existen
+    if (propertyData.pets_allowed && Array.isArray(propertyData.pets_allowed) && propertyData.pets_allowed.length > 0) {
+      const petsValues = propertyData.pets_allowed.map(pet => [propertyId, pet]);
+      await connection.query(
+        `INSERT INTO property_pets_allowed (property_id, pet_type) VALUES ?`,
+        [petsValues]
+      ).catch(error => {
+        console.error('Error al insertar mascotas permitidas:', error);
+        // No lanzamos error para no interrumpir la creación de la propiedad
+      });
+    }
+    
+    await connection.commit();
+    
+    return {
+      propertyId,
+      imageUrl,
+      additionalImageUrls
+    };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
   }
+}
 
   static async getProperties(filters = {}) {
     try {

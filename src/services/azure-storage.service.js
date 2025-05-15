@@ -9,7 +9,7 @@ class AzureStorageService {
   constructor() {
     this.accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
     this.accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
-    this.containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'property-images';
+    this.containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'business-images';
     
     if (!this.accountName || !this.accountKey) {
       console.warn('Azure Storage credentials not found in environment variables');

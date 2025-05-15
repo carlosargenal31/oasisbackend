@@ -3,21 +3,29 @@ import { PropertyService } from '../services/property.service.js';
 import { asyncErrorHandler } from '../utils/errors/index.js';
 
 export class PropertyController {
-  static createProperty = asyncErrorHandler(async (req, res) => {
-    // Obtener los archivos de imagen desde multer
-    const files = req.files;
-    
-    // Imagen principal (si existe)
-    const mainImageFile = files?.image?.[0];
-    
-    // Imágenes adicionales (si existen)
-    const additionalImageFiles = files?.additional_images || [];
-    
+  // src/controllers/property.controller.js
+// Modificación en el método createProperty
+static createProperty = asyncErrorHandler(async (req, res) => {
+  // Obtener los archivos de imagen desde multer
+  const files = req.files;
+  
+  // Imagen principal (si existe)
+  const mainImageFile = files?.image?.[0];
+  
+  // Imágenes adicionales (si existen)
+  const additionalImageFiles = files?.additional_images || [];
+  
+  // Eliminar host_id si existe (para asegurarnos)
+  if (req.body.host_id) {
+    delete req.body.host_id;
+  }
+  
+  console.log('Files received:', files); // Para depuración
+  console.log('Body received:', req.body); // Para depuración
+  
+  try {
     const result = await PropertyService.createProperty(
-      {
-        ...req.body,
-        host_id: req.userId
-      },
+      req.body,
       mainImageFile,
       additionalImageFiles
     );
@@ -31,7 +39,11 @@ export class PropertyController {
         message: 'Propiedad creada exitosamente'
       }
     });
-  });
+  } catch (error) {
+    console.error('Error completo en createProperty:', error);
+    throw error; // Re-lanzar para que sea manejado por asyncErrorHandler
+  }
+});
 
   static getProperties = asyncErrorHandler(async (req, res) => {
     const filters = {

@@ -22,20 +22,14 @@ export class Property {
         email VARCHAR(100),
         category VARCHAR(200),
         schedule VARCHAR(500),
-        bedrooms INT,
-        bathrooms DECIMAL(3,1),
-        square_feet DECIMAL(10,2),
+        start_time VARCHAR(10),
+        end_time VARCHAR(10),
         property_type ENUM('Gym', 'Balneario', 'Belleza', 'Futbol', 'Motocross', 'Cafetería', 
                            'Restaurante', 'Bar y restaurante', 'Comida rápida', 'Otro', 
                            'Repostería', 'Heladería', 'Bebidas', 'Bar', 'Hotel', 'Motel', 
                            'Casino', 'Cine', 'Videojuegos'),
-        status ENUM('for-rent', 'for-sale', 'unavailable') DEFAULT 'for-rent',
         image VARCHAR(255),
-        isNew BOOLEAN DEFAULT FALSE,
         isFeatured BOOLEAN DEFAULT FALSE,
-        isVerified BOOLEAN DEFAULT FALSE,
-        parkingSpaces INT DEFAULT 0,
-        host_id INT,
         average_rating DECIMAL(3,2) DEFAULT 0,
         views INT DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -59,7 +53,6 @@ export class Property {
     }
   }
 
-  // También debes actualizar el método create para incluir views en la creación de nuevas propiedades
   static async create(propertyData) {
     try {
       const connection = await mysqlPool.getConnection();
@@ -70,11 +63,12 @@ export class Property {
       const values = [];
 
       // Lista de todos los campos posibles adaptados a tu estructura actual
+      // Actualizada para coincidir con la estructura de la base de datos
       const possibleFields = [
         'title', 'description', 'address', 'phone', 'email', 'category', 
-        'schedule', 'bedrooms', 'bathrooms', 'square_feet', 'property_type', 
-        'status', 'image', 'isNew', 'isFeatured', 'isVerified', 'parkingSpaces', 
-        'host_id', 'views', 'lat', 'lng'
+        'schedule', 'start_time', 'end_time', 'property_type', 
+        'image', 'isFeatured', 'average_rating', 'views', 'lat', 'lng',
+        'archived', 'archived_at', 'archived_reason'
       ];
 
       // Añadir solo los campos que están definidos
@@ -139,11 +133,17 @@ export class Property {
       const updateFields = [];
       const updateValues = [];
       
+      // Eliminar cualquier campo host_id si existe
+      if (propertyData.host_id !== undefined) {
+        delete propertyData.host_id;
+      }
+      
       Object.entries(propertyData).forEach(([key, value]) => {
         if (value !== undefined && 
             key !== 'id' && 
             key !== 'created_at' && 
-            key !== 'updated_at') {
+            key !== 'updated_at' &&
+            key !== 'host_id') { // Asegurarse de que host_id nunca se use
           updateFields.push(`${key} = ?`);
           updateValues.push(value);
         }
@@ -168,7 +168,6 @@ export class Property {
       throw error;
     }
   }
-
   static async findAll(filters = {}, pagination = {}) {
   try {
     const connection = await mysqlPool.getConnection();
