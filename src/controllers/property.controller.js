@@ -377,35 +377,44 @@ static searchProperties = asyncErrorHandler(async (req, res) => {
   });
 
   static getAllProperties = asyncErrorHandler(async (req, res) => {
-    const filters = {
-      status: req.query.status,
-      property_type: req.query.property_type,
-      city: req.query.city,
-      minPrice: req.query.minPrice,
-      maxPrice: req.query.maxPrice,
-      minBedrooms: req.query.minBedrooms,
-      minBathrooms: req.query.minBathrooms,
-      host_id: req.query.host_id,
-      minArea: req.query.minArea,
-      maxArea: req.query.maxArea,
-      verified: req.query.verified === 'true',
-      featured: req.query.featured === 'true',
-      amenities: req.query.amenities ? 
-        (Array.isArray(req.query.amenities) ? req.query.amenities : [req.query.amenities]) 
-        : null,
-      pets: req.query.pets ? 
-        (Array.isArray(req.query.pets) ? req.query.pets : [req.query.pets]) 
-        : null,
-      sort: req.query.sort || 'newest' // Añadir parámetro de ordenación
-    };
+  console.log("PropertyController.getAllProperties - Recibida solicitud con query:", req.query);
   
-    const result = await PropertyService.getAllProperties(filters);
-    
-    res.json({
-      success: true,
-      data: result
-    });
+  const filters = {
+    status: req.query.status,
+    property_type: req.query.property_type,
+    city: req.query.city,
+    minPrice: req.query.minPrice,
+    maxPrice: req.query.maxPrice,
+    minBedrooms: req.query.minBedrooms,
+    minBathrooms: req.query.minBathrooms,
+    host_id: req.query.host_id,
+    minArea: req.query.minArea,
+    maxArea: req.query.maxArea,
+    verified: req.query.verified === 'true',
+    featured: req.query.featured === 'true',
+    amenities: req.query.amenities ? 
+      (Array.isArray(req.query.amenities) ? req.query.amenities : [req.query.amenities]) 
+      : null,
+    pets: req.query.pets ? 
+      (Array.isArray(req.query.pets) ? req.query.pets : [req.query.pets]) 
+      : null,
+    sort: req.query.sort || 'newest'
+  };
+
+  // CAMBIO RADICAL: NUNCA filtrar por archived por defecto
+  // Queremos ver TODAS las propiedades en el panel de administración
+  
+  console.log("Llamando a PropertyService.getAllProperties con filtros:", filters);
+  const result = await PropertyService.getAllProperties(filters);
+  
+  console.log(`PropertyService.getAllProperties devolvió ${result.properties.length} propiedades`);
+  console.log(`Propiedades archivadas: ${result.properties.filter(p => p.archived).length}`);
+  
+  res.json({
+    success: true,
+    data: result
   });
+});
 
   static getMainCategories = asyncErrorHandler(async (req, res) => {
     const pagination = {

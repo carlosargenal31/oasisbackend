@@ -304,113 +304,220 @@ export class PropertyService {
     }
   }
 
-  static async updateProperty(id, propertyData, imageFile, userId) {
-    if (!id) {
-      throw new ValidationError('ID de propiedad es requerido');
+  // Función archiveProperty modificada
+
+
+// Función toggleFeatured modificada
+static async toggleFeatured(id, featured, userId) {
+  if (!id) {
+    throw new ValidationError('ID de propiedad es requerido');
+  }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    // Verificar si la propiedad existe
+    const [property] = await connection.query(
+      'SELECT id FROM properties WHERE id = ?',
+      [id]
+    );
+
+    if (property.length === 0) {
+      throw new NotFoundError('Propiedad no encontrada');
     }
 
-    const connection = await mysqlPool.getConnection();
-    try {
-      await connection.beginTransaction();
+    // Verificar autorización (solo administradores pueden destacar propiedades)
+    const [user] = await connection.query(
+      'SELECT role FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (user.length === 0 || user[0].role !== 'admin') {
+      throw new AuthorizationError('Solo administradores pueden destacar propiedades');
+    }
+
+    // Actualizar el estado de destacado
+    const featuredValue = featured ? 1 : 0;
+    const [result] = await connection.query(
+      'UPDATE properties SET isFeatured = ? WHERE id = ?',
+      [featuredValue, id]
+    );
+
+    connection.release();
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error('Error al actualizar estado de destacado:', error);
+    throw error;
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Función updateProperty modificada
+static async updateProperty(id, propertyData, imageFile, userId) {
+  if (!id) {
+    throw new ValidationError('ID de propiedad es requerido');
+  }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    await connection.beginTransaction();
+    
+    // Verificar si la propiedad existe, sin verificar host_id
+    const [property] = await connection.query(
+      'SELECT id, image FROM properties WHERE id = ?',
+      [id]
+    );
+
+    if (property.length === 0) {
+      throw new NotFoundError('Propiedad no encontrada');
+    }
+
+    // No verificar autorización por host_id, cualquier admin puede actualizar
+    
+    // Convertir valores booleanos
+    if (propertyData.isNew !== undefined) {
+      propertyData.isNew = propertyData.isNew === 'true' || propertyData.isNew === true || propertyData.isNew === 1 ? 1 : 0;
+    }
+    
+    if (propertyData.isFeatured !== undefined) {
+      propertyData.isFeatured = propertyData.isFeatured === 'true' || propertyData.isFeatured === true || propertyData.isFeatured === 1 ? 1 : 0;
+    }
+    
+    if (propertyData.isVerified !== undefined) {
+      propertyData.isVerified = propertyData.isVerified === 'true' || propertyData.isVerified === true || propertyData.isVerified === 1 ? 1 : 0;
+    }
+    
+    // Si hay un archivo de imagen, subirlo a Azure
+    if (imageFile) {
+      const imageUrl = await azureStorageService.uploadImage(imageFile, id);
+      propertyData.image = imageUrl;
       
-      // Verificar si la propiedad existe y pertenece al usuario
-      const [property] = await connection.query(
-        'SELECT host_id, image FROM properties WHERE id = ?',
+      // Si había una imagen anterior, eliminarla
+      if (property[0].image) {
+        try {
+          await azureStorageService.deleteImage(property[0].image);
+        } catch (error) {
+          console.warn('No se pudo eliminar la imagen anterior:', error);
+          // No interrumpimos la actualización por este error
+        }
+      }
+    }
+
+    // Actualizar la propiedad
+    await Property.update(id, propertyData);
+    
+    // Si hay amenidades nuevas, actualizar
+    if (propertyData.amenities && Array.isArray(propertyData.amenities)) {
+      // Eliminar amenidades existentes
+      await connection.query(
+        'DELETE FROM property_amenities WHERE property_id = ?',
         [id]
       );
-
-      if (property.length === 0) {
-        throw new NotFoundError('Propiedad no encontrada');
-      }
-
-      // Verificar autorización
-      if (property[0].host_id !== userId) {
-        throw new AuthorizationError('No autorizado para actualizar esta propiedad');
-      }
       
-      // Convertir valores booleanos
-      if (propertyData.isNew !== undefined) {
-        propertyData.isNew = propertyData.isNew === 'true' || propertyData.isNew === true || propertyData.isNew === 1 ? 1 : 0;
-      }
-      
-      if (propertyData.isFeatured !== undefined) {
-        propertyData.isFeatured = propertyData.isFeatured === 'true' || propertyData.isFeatured === true || propertyData.isFeatured === 1 ? 1 : 0;
-      }
-      
-      if (propertyData.isVerified !== undefined) {
-        propertyData.isVerified = propertyData.isVerified === 'true' || propertyData.isVerified === true || propertyData.isVerified === 1 ? 1 : 0;
-      }
-      
-      // Si hay un archivo de imagen, subirlo a Azure
-      if (imageFile) {
-        const imageUrl = await azureStorageService.uploadImage(imageFile, id);
-        propertyData.image = imageUrl;
-        
-        // Si había una imagen anterior, eliminarla
-        if (property[0].image) {
-          try {
-            await azureStorageService.deleteImage(property[0].image);
-          } catch (error) {
-            console.warn('No se pudo eliminar la imagen anterior:', error);
-            // No interrumpimos la actualización por este error
-          }
-        }
-      }
-
-      // Actualizar la propiedad
-      await Property.update(id, propertyData);
-      
-      // Si hay amenidades nuevas, actualizar
-      if (propertyData.amenities && Array.isArray(propertyData.amenities)) {
-        // Eliminar amenidades existentes
+      // Insertar nuevas amenidades
+      if (propertyData.amenities.length > 0) {
+        const amenityValues = propertyData.amenities.map(amenity => [id, amenity]);
         await connection.query(
-          'DELETE FROM property_amenities WHERE property_id = ?',
-          [id]
-        );
-        
-        // Insertar nuevas amenidades
-        if (propertyData.amenities.length > 0) {
-          const amenityValues = propertyData.amenities.map(amenity => [id, amenity]);
-          await connection.query(
-            `INSERT INTO property_amenities (property_id, amenity) VALUES ?`,
-            [amenityValues]
-          ).catch(error => {
-            console.error('Error al insertar amenidades:', error);
-            // No lanzamos error para no interrumpir la actualización
-          });
-        }
+          `INSERT INTO property_amenities (property_id, amenity) VALUES ?`,
+          [amenityValues]
+        ).catch(error => {
+          console.error('Error al insertar amenidades:', error);
+          // No lanzamos error para no interrumpir la actualización
+        });
       }
-      
-      // Si hay mascotas permitidas nuevas, actualizar
-      if (propertyData.pets_allowed && Array.isArray(propertyData.pets_allowed)) {
-        // Eliminar registros existentes
-        await connection.query(
-          'DELETE FROM property_pets_allowed WHERE property_id = ?',
-          [id]
-        );
-        
-        // Insertar nuevos registros
-        if (propertyData.pets_allowed.length > 0) {
-          const petsValues = propertyData.pets_allowed.map(pet => [id, pet]);
-          await connection.query(
-            `INSERT INTO property_pets_allowed (property_id, pet_type) VALUES ?`,
-            [petsValues]
-          ).catch(error => {
-            console.error('Error al insertar mascotas permitidas:', error);
-            // No lanzamos error para no interrumpir la actualización
-          });
-        }
-      }
-      
-      await connection.commit();
-      return true;
-    } catch (error) {
-      await connection.rollback();
-      throw error;
-    } finally {
-      connection.release();
     }
+    
+    // Si hay mascotas permitidas nuevas, actualizar
+    if (propertyData.pets_allowed && Array.isArray(propertyData.pets_allowed)) {
+      // Eliminar registros existentes
+      await connection.query(
+        'DELETE FROM property_pets_allowed WHERE property_id = ?',
+        [id]
+      );
+      
+      // Insertar nuevos registros
+      if (propertyData.pets_allowed.length > 0) {
+        const petsValues = propertyData.pets_allowed.map(pet => [id, pet]);
+        await connection.query(
+          `INSERT INTO property_pets_allowed (property_id, pet_type) VALUES ?`,
+          [petsValues]
+        ).catch(error => {
+          console.error('Error al insertar mascotas permitidas:', error);
+          // No lanzamos error para no interrumpir la actualización
+        });
+      }
+    }
+    
+    await connection.commit();
+    return true;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
   }
+}
+
+// Función restoreProperty modificada
+static async archiveProperty(id, archiveData = {}, userId) {
+  if (!id) {
+    throw new ValidationError('ID de propiedad es requerido');
+  }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    // Verificar si la propiedad existe
+    const [property] = await connection.query(
+      'SELECT id FROM properties WHERE id = ?',
+      [id]
+    );
+
+    if (property.length === 0) {
+      throw new NotFoundError('Propiedad no encontrada');
+    }
+
+    // Archivar la propiedad
+    await Property.archive(id, archiveData.reason);
+    
+    connection.release();
+    return true;
+  } catch (error) {
+    console.error('Error archivando propiedad:', error);
+    throw error;
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+static async restoreProperty(id, userId) {
+  if (!id) {
+    throw new ValidationError('ID de propiedad es requerido');
+  }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    // Verificar si la propiedad existe
+    const [property] = await connection.query(
+      'SELECT id FROM properties WHERE id = ?',
+      [id]
+    );
+
+    if (property.length === 0) {
+      throw new NotFoundError('Propiedad no encontrada');
+    }
+
+    // Restaurar la propiedad
+    await Property.restore(id);
+    
+    connection.release();
+    return true;
+  } catch (error) {
+    console.error('Error restaurando propiedad:', error);
+    throw error;
+  } finally {
+    if (connection) connection.release();
+  }
+}
 
   static async deleteProperty(id, userId) {
     if (!id) {
@@ -535,75 +642,7 @@ export class PropertyService {
     }
   }
 
-  static async archiveProperty(id, archiveData = {}, userId) {
-    if (!id) {
-      throw new ValidationError('ID de propiedad es requerido');
-    }
-
-    const connection = await mysqlPool.getConnection();
-    try {
-      // Verificar si la propiedad existe y pertenece al usuario
-      const [property] = await connection.query(
-        'SELECT host_id FROM properties WHERE id = ?',
-        [id]
-      );
-
-      if (property.length === 0) {
-        throw new NotFoundError('Propiedad no encontrada');
-      }
-
-      // Verificar autorización
-      if (property[0].host_id !== userId) {
-        throw new AuthorizationError('No autorizado para archivar esta propiedad');
-      }
-
-      // Archivar la propiedad
-      await Property.archive(id, archiveData.reason);
-      
-      connection.release();
-      return true;
-    } catch (error) {
-      console.error('Error archivando propiedad:', error);
-      throw error;
-    } finally {
-      if (connection) connection.release();
-    }
-  }
-
-  static async restoreProperty(id, status = 'for-rent', userId) {
-    if (!id) {
-      throw new ValidationError('ID de propiedad es requerido');
-    }
-
-    const connection = await mysqlPool.getConnection();
-    try {
-      // Verificar si la propiedad existe y pertenece al usuario
-      const [property] = await connection.query(
-        'SELECT host_id FROM properties WHERE id = ?',
-        [id]
-      );
-
-      if (property.length === 0) {
-        throw new NotFoundError('Propiedad no encontrada');
-      }
-
-      // Verificar autorización
-      if (property[0].host_id !== userId) {
-        throw new AuthorizationError('No autorizado para restaurar esta propiedad');
-      }
-
-      // Restaurar la propiedad
-      await Property.restore(id, status);
-      
-      connection.release();
-      return true;
-    } catch (error) {
-      console.error('Error restaurando propiedad:', error);
-      throw error;
-    } finally {
-      if (connection) connection.release();
-    }
-  }
+  
 
   static async getArchivedProperties(userId, pagination = { page: 1, limit: 10 }) {
     if (!userId) {
@@ -1168,49 +1207,7 @@ static async searchProperties(searchTerm, searchFields = null, params = {}) {
    * @param {number} userId - ID del usuario
    * @returns {Promise<boolean>} - Resultado de la operación
    */
-  static async toggleFeatured(id, featured, userId) {
-    if (!id) {
-      throw new ValidationError('ID de propiedad es requerido');
-    }
-
-    const connection = await mysqlPool.getConnection();
-    try {
-      // Verificar si la propiedad existe y pertenece al usuario
-      const [property] = await connection.query(
-        'SELECT host_id FROM properties WHERE id = ?',
-        [id]
-      );
-
-      if (property.length === 0) {
-        throw new NotFoundError('Propiedad no encontrada');
-      }
-
-      // Verificar autorización (solo administradores pueden destacar propiedades)
-      const [user] = await connection.query(
-        'SELECT role FROM users WHERE id = ?',
-        [userId]
-      );
-
-      if (user.length === 0 || user[0].role !== 'admin') {
-        throw new AuthorizationError('Solo administradores pueden destacar propiedades');
-      }
-
-      // Actualizar el estado de destacado
-      const featuredValue = featured ? 1 : 0;
-      const [result] = await connection.query(
-        'UPDATE properties SET isFeatured = ? WHERE id = ?',
-        [featuredValue, id]
-      );
-
-      connection.release();
-      return result.affectedRows > 0;
-    } catch (error) {
-      console.error('Error al actualizar estado de destacado:', error);
-      throw error;
-    } finally {
-      if (connection) connection.release();
-    }
-  }
+  
 
   /**
    * Verifica o quita verificación de una propiedad
@@ -1279,90 +1276,69 @@ static async searchProperties(searchTerm, searchFields = null, params = {}) {
   }
 
   static async getAllProperties(filters = {}) {
-    try {
-      // Eliminar filtros de price si existen
-      const adjustedFilters = {...filters};
-      if (adjustedFilters.minPrice) delete adjustedFilters.minPrice;
-      if (adjustedFilters.maxPrice) delete adjustedFilters.maxPrice;
+  try {
+    console.log("Filtros recibidos en getAllProperties:", filters);
+    
+    // CAMBIO RADICAL: nunca filtrar por archived por defecto
+    const adjustedFilters = {...filters};
+    
+    // Eliminar filtros de price si existen
+    if (adjustedFilters.minPrice) delete adjustedFilters.minPrice;
+    if (adjustedFilters.maxPrice) delete adjustedFilters.maxPrice;
+    
+    console.log("Llamando a Property.findAll con filtros:", adjustedFilters);
+    
+    // Usar el método del modelo para obtener propiedades filtradas
+    const { properties, total } = await Property.findAll(adjustedFilters, { limit: null, offset: 0 });
+    
+    console.log(`Property.findAll devolvió ${properties.length} propiedades de ${total} totales`);
+    console.log(`Propiedades archivadas: ${properties.filter(p => p.archived).length}`);
+    
+    // Añadir información de host y otras mejoras a cada propiedad
+    const connection = await mysqlPool.getConnection();
+    const enhancedProperties = await Promise.all(properties.map(async property => {
+      // IMPORTANTE: Normalizar el campo archived como booleano
+      property.archived = property.archived === 1 || property.archived === true;
       
-      // Usar el método del modelo para obtener todas las propiedades sin límite
-      const { properties, total } = await Property.findAll(adjustedFilters, { limit: null, offset: 0 });
-      
-      // Añadir información de host y otras mejoras a cada propiedad
-      const connection = await mysqlPool.getConnection();
-      const enhancedProperties = await Promise.all(properties.map(async property => {
-        // Añadir información básica del host si existe
-        if (property.host_id) {
-          try {
-            const [hostData] = await connection.query(
-              `SELECT first_name, last_name, profile_image, short_bio 
-               FROM users 
-               WHERE id = ?`,
-              [property.host_id]
-            );
-            
-            if (hostData && hostData.length > 0) {
-              property.host_first_name = hostData[0].first_name;
-              property.host_last_name = hostData[0].last_name;
-              property.host_profile_image = hostData[0].profile_image;
-              property.host_bio = hostData[0].short_bio;
-              property.host_name = `${hostData[0].first_name || ''} ${hostData[0].last_name || ''}`.trim() || 'Anfitrión';
-            }
-          } catch (error) {
-            console.error(`Error al obtener datos del host para propiedad ${property.id}:`, error);
-          }
-        }
-        
-        // Obtener calificación promedio del anfitrión
+      // Añadir información básica del host si existe
+      if (property.host_id) {
         try {
-          const [hostRating] = await connection.query(
-            `SELECT AVG(r.rating) as host_average_rating
-             FROM reviews r
-             JOIN properties p ON r.property_id = p.id
-             WHERE p.host_id = ?`,
+          const [hostData] = await connection.query(
+            `SELECT first_name, last_name, profile_image, short_bio 
+             FROM users 
+             WHERE id = ?`,
             [property.host_id]
           );
           
-          if (hostRating && hostRating.length > 0) {
-            property.host_average_rating = hostRating[0].host_average_rating || 0;
+          if (hostData && hostData.length > 0) {
+            property.host_first_name = hostData[0].first_name;
+            property.host_last_name = hostData[0].last_name;
+            property.host_profile_image = hostData[0].profile_image;
+            property.host_bio = hostData[0].short_bio;
+            property.host_name = `${hostData[0].first_name || ''} ${hostData[0].last_name || ''}`.trim() || 'Anfitrión';
           }
         } catch (error) {
-          console.error(`Error al obtener calificación del anfitrión ${property.host_id}:`, error);
-          property.host_average_rating = 0;
+          console.error(`Error al obtener datos del host para propiedad ${property.id}:`, error);
         }
-        
-        // Obtener conteo de reseñas del anfitrión
-        try {
-          const [hostReviews] = await connection.query(
-            `SELECT COUNT(*) as host_review_count
-             FROM reviews r
-             JOIN properties p ON r.property_id = p.id
-             WHERE p.host_id = ?`,
-            [property.host_id]
-          );
-          
-          if (hostReviews && hostReviews.length > 0) {
-            property.host_review_count = hostReviews[0].host_review_count || 0;
-          }
-        } catch (error) {
-          console.error(`Error al obtener conteo de reseñas del anfitrión ${property.host_id}:`, error);
-          property.host_review_count = 0;
-        }
-        
-        return property;
-      }));
+      }
       
-      connection.release();
-      
-      return {
-        properties: enhancedProperties,
-        total
-      };
-    } catch (error) {
-      console.error('Error en getAllProperties:', error);
-      throw error;
-    }
+      return property;
+    }));
+    
+    connection.release();
+    
+    console.log(`Propiedades después de procesar: ${enhancedProperties.length}`);
+    console.log(`Propiedades archivadas después de procesar: ${enhancedProperties.filter(p => p.archived).length}`);
+    
+    return {
+      properties: enhancedProperties,
+      total
+    };
+  } catch (error) {
+    console.error('Error en getAllProperties:', error);
+    throw error;
   }
+}
 
   // Actualización para property.service.js
 // Mejora en el método getPropertiesByMainCategories para filtrar correctamente por tipo
