@@ -69,10 +69,6 @@ export class ReviewService {
         [reviewData.property_id, reviewData.reviewer_id]
       );
 
-      if (existingReview.length > 0) {
-        throw new ConflictError('Ya has dejado una reseña para esta propiedad. Puedes editarla si deseas.');
-      }
-
       // Crear la reseña
       const [result] = await connection.query(
         `INSERT INTO reviews 
