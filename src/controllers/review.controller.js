@@ -1,55 +1,70 @@
 // src/controllers/review.controller.js
 import { ReviewService } from '../services/review.service.js';
 import { asyncErrorHandler } from '../utils/errors/index.js';
+import { mysqlPool } from '../config/database.js';
 
 export class ReviewController {
   /**
    * Crea una nueva reseña
    */
-  // src/controllers/review.controller.js - Modificación para corregir la creación de reseñas
-
-/**
- * Crea una nueva reseña
- */
-static createReview = asyncErrorHandler(async (req, res) => {
-  // Extraer datos de la solicitud
-  const { property_id, reviewer_name, email, rating, comment } = req.body;
-  
-  // Validaciones básicas
-  if (!property_id || !reviewer_name || !rating) {
-    return res.status(400).json({
-      success: false,
-      message: 'Datos de reseña incompletos'
-    });
-  }
-  
-  try {
-    // Para reseñas públicas (no autenticadas)
-    // Usamos reviewer_id = 0 para indicar un usuario anónimo/público
-    const reviewId = await ReviewService.createReview({
-      property_id: parseInt(property_id),
-      reviewer_id: req.userId || 0,
-      reviewer_name,
-      email,
-      rating: parseInt(rating),
-      comment
-    });
-
-    res.status(201).json({
-      success: true,
-      data: {
-        reviewId,
-        message: 'Reseña creada exitosamente'
+  static createReview = asyncErrorHandler(async (req, res) => {
+    // Extraer datos de la solicitud
+    const { property_id, rating, comment } = req.body;
+    
+    // El userId está disponible gracias al middleware authenticate
+    const userId = req.userId;
+    
+    // Validaciones básicas
+    if (!property_id || !rating) {
+      return res.status(400).json({
+        success: false,
+        message: 'Datos de reseña incompletos'
+      });
+    }
+    
+    try {
+      // Obtener información del usuario desde la base de datos
+      const connection = await mysqlPool.getConnection();
+      const [userResult] = await connection.query(
+        'SELECT id, first_name, last_name, email FROM users WHERE id = ?',
+        [userId]
+      );
+      connection.release();
+      
+      if (userResult.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Usuario no encontrado'
+        });
       }
-    });
-  } catch (error) {
-    console.error('Error al crear reseña:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al crear la reseña'
-    });
-  }
-});
+      
+      const user = userResult[0];
+      
+      // Crear la reseña con los datos del usuario
+      const reviewId = await ReviewService.createReview({
+        property_id: parseInt(property_id),
+        reviewer_id: userId,
+        reviewer_name: `${user.first_name} ${user.last_name}`.trim(),
+        email: user.email,
+        rating: parseInt(rating),
+        comment
+      });
+
+      res.status(201).json({
+        success: true,
+        data: {
+          reviewId,
+          message: 'Reseña creada exitosamente'
+        }
+      });
+    } catch (error) {
+      console.error('Error al crear reseña:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al crear la reseña'
+      });
+    }
+  });
 
   /**
    * Obtiene reseñas con filtros opcionales
@@ -149,14 +164,56 @@ static createReview = asyncErrorHandler(async (req, res) => {
    */
   static getPropertyRating = asyncErrorHandler(async (req, res) => {
     const propertyId = req.params.propertyId;
-    const averageRating = await ReviewService.getPropertyAverageRating(propertyId);
     
-    res.json({
-      success: true,
-      data: {
-        propertyId,
-        averageRating
-      }
-    });
+    try {
+      // Obtener rating promedio
+      const averageRating = await ReviewService.getPropertyAverageRating(propertyId);
+      
+      // Asegurar que el valor sea numérico
+      const formattedRating = averageRating !== null ? Number(averageRating) : 0;
+      
+      res.json({
+        success: true,
+        data: {
+          propertyId,
+          averageRating: formattedRating
+        }
+      });
+    } catch (error) {
+      console.error(`Error al obtener rating para propiedad ${propertyId}:`, error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener rating promedio',
+        data: {
+          propertyId,
+          averageRating: 0
+        }
+      });
+    }
+  });
+
+  /**
+   * Recalcula y actualiza los ratings promedio de todas las propiedades
+   * Solo accesible para administradores
+   */
+  static recalculateAllPropertyRatings = asyncErrorHandler(async (req, res) => {
+    try {
+      const result = await ReviewService.recalculateAllPropertyRatings();
+      
+      res.json({
+        success: true,
+        data: {
+          message: 'Ratings promedio actualizados correctamente',
+          totalProperties: result.totalProperties,
+          updatedProperties: result.updatedProperties
+        }
+      });
+    } catch (error) {
+      console.error('Error al recalcular ratings promedio:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al recalcular ratings promedio'
+      });
+    }
   });
 }

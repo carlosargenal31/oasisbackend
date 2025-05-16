@@ -2,17 +2,17 @@
 import { ValidationError } from '../utils/errors/index.js';
 
 export const validateReviewData = (req, res, next) => {
-  const { property_id, reviewer_name, rating, comment } = req.body;
+  const { property_id, rating, comment } = req.body;
   const errors = [];
+
+  // Validar que el usuario esté autenticado
+  if (!req.userId) {
+    throw new ValidationError('Se requiere autenticación para dejar una reseña');
+  }
 
   // Validar propiedad
   if (!property_id) {
     errors.push('property_id');
-  }
-
-  // Validar nombre del revisor (requerido solo si no hay usuario autenticado)
-  if (!req.userId && !reviewer_name) {
-    errors.push('reviewer_name');
   }
 
   // Validar rating

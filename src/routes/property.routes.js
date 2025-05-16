@@ -22,14 +22,28 @@ const upload = multer({
   }
 });
 
-// Rutas públicas
+// Rutas públicas - IMPORTANTE: Las rutas específicas deben ir ANTES de /:id
 router.get('/', PropertyController.getProperties);
+router.get('/all', PropertyController.getAllProperties);
 router.get('/search', PropertyController.searchProperties);
 router.get('/featured', PropertyController.getFeaturedProperties);
 router.get('/recent', PropertyController.getRecentProperties);
+router.get('/popular', PropertyController.getPopularProperties);
 router.get('/stats', PropertyController.getPropertyStats);
+
+// Agregar las rutas de categorías
+router.get('/categories', PropertyController.getMainCategories);
+router.get('/categories/featured', PropertyController.getMainFeaturedCategories); 
+router.get('/categories/featured/:category', PropertyController.getPropertiesByFeaturedCategory);
+router.get('/categories/:category', PropertyController.getPropertiesByCategory);
+
+router.get('/user/archived', authenticate, PropertyController.getArchivedProperties);
+router.get('/host/stats/:hostId?', authenticate, PropertyController.getHostStats);
+
+// Estas rutas deben estar después de todas las rutas específicas
 router.get('/:id', PropertyController.getProperty);
-router.post('/:id/view', PropertyController.incrementPropertyViews); // Ruta para contador de vistas
+router.get('/:id/similar', PropertyController.getSimilarProperties);
+router.post('/:id/view', PropertyController.incrementPropertyViews);
 
 // Rutas protegidas
 router.post('/', authenticate, upload.fields([
@@ -43,11 +57,15 @@ router.delete('/:id', authenticate, PropertyController.deleteProperty);
 router.patch('/:id/archive', authenticate, PropertyController.archiveProperty);
 router.patch('/:id/restore', authenticate, PropertyController.restoreProperty);
 router.delete('/:id/soft', authenticate, PropertyController.softDeleteProperty);
-
-// Ruta para obtener propiedades archivadas del usuario
-router.get('/user/archived', authenticate, PropertyController.getArchivedProperties);
+// En property.routes.js, añadir esta ruta antes de las rutas con :id
+router.get('/:id/amenities', PropertyController.getPropertyAmenities);
 
 // Rutas para imágenes
 router.post('/:id/images', authenticate, upload.single('image'), PropertyController.addPropertyImage);
+
+// Rutas para funcionalidades administrativas
+router.patch('/:id/featured', authenticate, PropertyController.toggleFeatured);
+router.patch('/:id/verified', authenticate, PropertyController.toggleVerified);
+router.post('/bulk-update', authenticate, PropertyController.bulkUpdateStatus);
 
 export default router;
