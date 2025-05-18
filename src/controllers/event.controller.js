@@ -6,41 +6,7 @@ import { asyncErrorHandler } from '../utils/errors/index.js';
 export class EventController {
   // En event.controller.js - Asegurarse de que todos los filtros se pasen correctamente
 
-static getEvents = asyncErrorHandler(async (req, res) => {
-  const filters = {
-    event_type: req.query.event_type,
-    search: req.query.search,
-    created_by: req.query.created_by,
-    limit: req.query.limit,
-    offset: req.query.offset,
-    featured: req.query.featured !== undefined ? req.query.featured === 'true' : undefined,
-    home: req.query.home !== undefined ? req.query.home === 'true' : undefined,
-    status: req.query.status,  // Puede ser una lista separada por comas
-    date_from: req.query.date_from,
-    date_to: req.query.date_to,
-    price: req.query.price,  // Para eventos gratuitos
-    price_max: req.query.price_max,  // Para precio máximo
-    upcoming: req.query.upcoming === 'true',
-    past: req.query.past === 'true',
-    sort_by: req.query.sort_by,
-    sort_order: req.query.sort_order
-  };
 
-  // Log para debug
-  console.log('Filtros recibidos en el controlador:', filters)
-
-  const result = await EventService.getEvents(filters);
-  
-  res.json({
-    success: true,
-    data: {
-      events: result.events,
-      total: result.total,
-      page: result.page,
-      limit: result.limit
-    }
-  });
-});
 
   static getFeaturedEvents = asyncErrorHandler(async (req, res) => {
     const limit = req.query.limit || 3;
@@ -62,8 +28,90 @@ static getEvents = asyncErrorHandler(async (req, res) => {
     });
   });
 
+  // Nuevo método específico para el panel de admin
+  static getAdminEvents = asyncErrorHandler(async (req, res) => {
+    const filters = {
+      event_type: req.query.event_type,
+      search: req.query.search,
+      created_by: req.query.created_by,
+      limit: req.query.limit,
+      offset: req.query.offset,
+      featured: req.query.featured !== undefined ? req.query.featured === 'true' : undefined,
+      home: req.query.home !== undefined ? req.query.home === 'true' : undefined,
+      status: req.query.status,  // Puede ser una lista separada por comas
+      date_from: req.query.date_from,
+      date_to: req.query.date_to,
+      price: req.query.price,  // Para eventos gratuitos
+      price_max: req.query.price_max,  // Para precio máximo
+      upcoming: req.query.upcoming === 'true',
+      past: req.query.past === 'true',
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
+      // Marcar que es una solicitud de panel admin
+      isAdminPanel: true
+    };
+
+    // Log para debug
+    console.log('Filtros recibidos en el controlador admin:', filters)
+
+    const result = await EventService.getAdminEvents(filters);
+    
+    res.json({
+      success: true,
+      data: {
+        events: result.events,
+        total: result.total,
+        page: result.page,
+        limit: result.limit
+      }
+    });
+  });
+
+  // Método público original - asegurando que solo muestre eventos activos
+  static getEvents = asyncErrorHandler(async (req, res) => {
+    const filters = {
+      event_type: req.query.event_type,
+      search: req.query.search,
+      created_by: req.query.created_by,
+      limit: req.query.limit,
+      offset: req.query.offset,
+      featured: req.query.featured !== undefined ? req.query.featured === 'true' : undefined,
+      home: req.query.home !== undefined ? req.query.home === 'true' : undefined,
+      status: 'activo',  // Forzar solo eventos activos en vista pública
+      date_from: req.query.date_from,
+      date_to: req.query.date_to,
+      price: req.query.price,
+      price_max: req.query.price_max,
+      upcoming: req.query.upcoming === 'true',
+      past: req.query.past === 'true',
+      sort_by: req.query.sort_by,
+      sort_order: req.query.sort_order,
+      // Marcar explícitamente que NO es admin
+      isAdminPanel: false
+    };
+
+    // Log para debug
+    console.log('Filtros recibidos en el controlador público:', filters)
+
+    const result = await EventService.getEvents(filters);
+    
+    res.json({
+      success: true,
+      data: {
+        events: result.events,
+        total: result.total,
+        page: result.page,
+        limit: result.limit
+      }
+    });
+  });
+
+  // Método para obtener un evento individual - ajustado para verificar permisos
   static getEvent = asyncErrorHandler(async (req, res) => {
-    const event = await EventService.getEventById(req.params.id);
+    // Determinar si la solicitud viene del admin
+    const isAdmin = req.headers['x-admin-request'] === 'true';
+    
+    const event = await EventService.getEventById(req.params.id, isAdmin);
     
     res.json({
       success: true,

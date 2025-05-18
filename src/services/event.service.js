@@ -54,11 +54,20 @@ export class EventService {
         filters.offset = parseInt(filters.offset);
       }
       
+      // Este es un método público general, por defecto NO es panel de admin
+      const isAdminPanel = filters.isAdminPanel || false;
+      
       // Obtener eventos con los filtros proporcionados
-      const events = await Event.findAll(filters);
+      const events = await Event.findAll({
+        ...filters,
+        isAdminPanel: isAdminPanel
+      });
       
       // Obtener el total de eventos con los mismos filtros (sin paginación)
-      const total = await Event.count(filters);
+      const total = await Event.count({
+        ...filters,
+        isAdminPanel: isAdminPanel
+      });
       
       return {
         events,
@@ -69,6 +78,19 @@ export class EventService {
     } catch (error) {
       console.error('Error getting events:', error);
       throw new DatabaseError('Error al obtener los eventos');
+    }
+  }
+
+  // Método específico para el panel de admin
+  static async getAdminEvents(filters = {}) {
+    try {
+      return await EventService.getEvents({
+        ...filters,
+        isAdminPanel: true
+      });
+    } catch (error) {
+      console.error('Error getting admin events:', error);
+      throw new DatabaseError('Error al obtener los eventos para administración');
     }
   }
 
@@ -102,7 +124,7 @@ export class EventService {
     }
   }
 
-  static async getEventById(id) {
+  static async getEventById(id, isAdmin = false) {
     if (!id) {
       throw new ValidationError('ID de evento es requerido');
     }
@@ -111,6 +133,11 @@ export class EventService {
       const event = await Event.findById(id);
       
       if (!event) {
+        throw new NotFoundError('Evento no encontrado');
+      }
+      
+      // Si no es admin y el evento no está activo, no mostrar
+      if (!isAdmin && event.status !== 'activo') {
         throw new NotFoundError('Evento no encontrado');
       }
       
@@ -123,6 +150,8 @@ export class EventService {
       throw new DatabaseError('Error al obtener el evento');
     }
   }
+
+  
 
   static async updateEvent(id, eventData, userId) {
     if (!id) {

@@ -348,7 +348,8 @@ static async toggleFeatured(id, featured, userId) {
   }
 }
 
-static async updateProperty(id, propertyData, imageFile, userId) {
+// En property.service.js, método updateProperty modificado
+static async updateProperty(id, propertyData, imageFile, additionalImageFiles = [], userId) {
   if (!id) {
     throw new ValidationError('ID de propiedad es requerido');
   }
@@ -363,6 +364,9 @@ static async updateProperty(id, propertyData, imageFile, userId) {
     }
     delete propertyData.amenities;
   }
+
+  // Asegurarse de que se eliminan los campos que no deben actualizarse directamente
+  delete propertyData.additional_images;
 
   const connection = await mysqlPool.getConnection();
   try {
@@ -383,24 +387,54 @@ static async updateProperty(id, propertyData, imageFile, userId) {
       propertyData.isFeatured = propertyData.isFeatured === 'true' || propertyData.isFeatured === true || propertyData.isFeatured === 1 ? 1 : 0;
     }
     
+    console.log("Datos para actualizar:", propertyData);
+    
     // Si hay un archivo de imagen, subirlo a Azure
     if (imageFile) {
-      const imageUrl = await azureStorageService.uploadImage(imageFile, id);
-      propertyData.image = imageUrl;
-      
-      // Si había una imagen anterior, eliminarla
-      if (property[0].image) {
-        try {
-          await azureStorageService.deleteImage(property[0].image);
-        } catch (error) {
-          console.warn('No se pudo eliminar la imagen anterior:', error);
-          // No interrumpimos la actualización por este error
+      try {
+        const imageUrl = await azureStorageService.uploadImage(imageFile, `${id}-${Date.now()}`);
+        propertyData.image = imageUrl;
+        
+        // Si había una imagen anterior, eliminarla
+        if (property[0].image) {
+          try {
+            await azureStorageService.deleteImage(property[0].image);
+          } catch (error) {
+            console.warn('No se pudo eliminar la imagen anterior:', error);
+            // No interrumpimos la actualización por este error
+          }
         }
+      } catch (imageError) {
+        console.error("Error al procesar imagen principal:", imageError);
+        throw new Error("Error al procesar la imagen principal: " + imageError.message);
       }
     }
 
     // Actualizar la propiedad
-    await Property.update(id, propertyData);
+    const updateResult = await Property.update(id, propertyData);
+    
+    if (!updateResult) {
+      throw new Error("No se pudo actualizar la propiedad");
+    }
+    
+    // Procesar imágenes adicionales
+    if (additionalImageFiles && additionalImageFiles.length > 0) {
+      for (const file of additionalImageFiles) {
+        try {
+          // Subir imagen adicional
+          const additionalImageUrl = await azureStorageService.uploadImage(file, `${id}-additional-${Date.now()}`);
+          
+          // Insertar en la tabla property_images
+          await connection.query(
+            `INSERT INTO property_images (property_id, image_url, is_primary) VALUES (?, ?, ?)`,
+            [id, additionalImageUrl, false]
+          );
+        } catch (error) {
+          console.error('Error al procesar imagen adicional:', error);
+          // Continuamos con las siguientes imágenes si hay error
+        }
+      }
+    }
     
     // Actualizar amenidades
     if (amenities.length > 0) {
@@ -425,6 +459,7 @@ static async updateProperty(id, propertyData, imageFile, userId) {
     return true;
   } catch (error) {
     await connection.rollback();
+    console.error("Error completo en updateProperty:", error);
     throw error;
   } finally {
     connection.release();

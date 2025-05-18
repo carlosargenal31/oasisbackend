@@ -1,4 +1,6 @@
-// src/routes/event.routes.js
+// Modificación para event.routes.js
+// Añadir nueva ruta para el panel de admin
+
 import express from 'express';
 import multer from 'multer';
 import { authenticate } from '../middleware/auth.middleware.js';
@@ -21,6 +23,9 @@ const upload = multer({
     }
   }
 });
+
+// Nueva ruta específica para el panel de admin
+router.get('/admin', authenticate, EventController.getAdminEvents);
 
 // Rutas públicas (no requieren autenticación)
 router.get('/', EventController.getEvents);

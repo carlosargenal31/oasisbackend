@@ -66,184 +66,189 @@ export class Event {
   
   // Obtener todos los eventos con opciones de filtro
   static async findAll(filters = {}) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      let query = `
-        SELECT e.*, u.first_name, u.last_name, u.profile_image 
-        FROM events e
-        JOIN users u ON e.created_by = u.id
-        WHERE 1=1
-      `;
-      
-      const params = [];
-      
-      // Filtrar por tipo de evento
-      if (filters.event_type) {
-        query += ' AND e.event_type = ?';
-        params.push(filters.event_type);
-      }
-      
-      // Filtrar por creador
-      if (filters.created_by) {
-        query += ' AND e.created_by = ?';
-        params.push(filters.created_by);
-      }
-      
-      // Filtrar por is_featured
-      if (filters.featured !== undefined) {
-        query += ' AND e.is_featured = ?';
-        params.push(filters.featured ? 1 : 0);
-      }
-      
-      // Filtrar por is_home
-      if (filters.home !== undefined) {
-        query += ' AND e.is_home = ?';
-        params.push(filters.home ? 1 : 0);
-      }
-      
-      // Filtrar por status (uno o múltiples separados por coma)
-      if (filters.status) {
-        const statuses = filters.status.split(',').map(s => s.trim());
-        if (statuses.length === 1) {
-          query += ' AND e.status = ?';
-          params.push(statuses[0]);
-        } else {
-          // Para múltiples estados, usar IN
-          const placeholders = statuses.map(() => '?').join(',');
-          query += ` AND e.status IN (${placeholders})`;
-          params.push(...statuses);
-        }
-      }
-      
-      // Filtrar por fecha desde
-      if (filters.date_from) {
-        query += ' AND e.event_date >= ?';
-        params.push(filters.date_from);
-      }
-      
-      // Filtrar por fecha hasta
-      if (filters.date_to) {
-        query += ' AND e.event_date <= ?';
-        params.push(filters.date_to);
-      }
-      
-      // Filtrar por eventos futuros (desde hoy)
-      if (filters.upcoming) {
-        query += ' AND e.event_date >= CURDATE()';
-      }
-      
-      // Filtrar por eventos pasados
-      if (filters.past) {
-        query += ' AND e.event_date < CURDATE()';
-      }
-      
-      // Filtrar por precio exacto (para eventos gratuitos)
-      if (filters.price !== undefined) {
-        query += ' AND e.price = ?';
-        params.push(filters.price);
-      }
-      
-      // Filtrar por precio máximo
-      if (filters.price_max !== undefined) {
-        query += ' AND e.price <= ?';
-        params.push(filters.price_max);
-      }
-      
-      // Búsqueda por término
-      if (filters.search) {
-        query += ' AND (e.event_name LIKE ? OR e.description LIKE ? OR e.location LIKE ?)';
-        const searchTerm = `%${filters.search}%`;
-        params.push(searchTerm, searchTerm, searchTerm);
-      }
-      
-      // Ordenamiento - SIN prioridad a destacados
-      let orderClause = '';
-      
-      // Verificar si hay parámetros de ordenación específicos
-      if (filters.sort_by) {
-        // Añadir ordenamiento específico
-        orderClause = ` ORDER BY e.${filters.sort_by} ${filters.sort_order || 'ASC'}`;
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    let query = `
+      SELECT e.*, u.first_name, u.last_name, u.profile_image 
+      FROM events e
+      JOIN users u ON e.created_by = u.id
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    
+    // Si NO estamos en el panel de admin (indicado por un flag en filters)
+    // filtramos para mostrar solo eventos activos
+    if (!filters.isAdminPanel) {
+      query += ' AND e.status = "activo"';
+    }
+    
+    // Filtrar por tipo de evento
+    if (filters.event_type) {
+      query += ' AND e.event_type = ?';
+      params.push(filters.event_type);
+    }
+    
+    // Filtrar por creador
+    if (filters.created_by) {
+      query += ' AND e.created_by = ?';
+      params.push(filters.created_by);
+    }
+    
+    // Filtrar por is_featured
+    if (filters.featured !== undefined) {
+      query += ' AND e.is_featured = ?';
+      params.push(filters.featured ? 1 : 0);
+    }
+    
+    // Filtrar por is_home
+    if (filters.home !== undefined) {
+      query += ' AND e.is_home = ?';
+      params.push(filters.home ? 1 : 0);
+    }
+    
+    // Filtrar por status (uno o múltiples separados por coma)
+    if (filters.status) {
+      const statuses = filters.status.split(',').map(s => s.trim());
+      if (statuses.length === 1) {
+        query += ' AND e.status = ?';
+        params.push(statuses[0]);
       } else {
-        // Ordenamiento por defecto por fecha del evento
-        orderClause = ' ORDER BY e.event_date ASC';
+        // Para múltiples estados, usar IN
+        const placeholders = statuses.map(() => '?').join(',');
+        query += ` AND e.status IN (${placeholders})`;
+        params.push(...statuses);
       }
-      
-      query += orderClause;
-      
-      // Paginación
-      if (filters.limit) {
-        query += ' LIMIT ?';
-        params.push(parseInt(filters.limit));
-        
-        if (filters.offset || filters.offset === 0) {
-          query += ' OFFSET ?';
-          params.push(parseInt(filters.offset));
-        }
-      }
-      
-      console.log('Query final:', query);  // Debug log
-      console.log('Params:', params);      // Debug log
-      
-      const [events] = await connection.query(query, params);
-      
-      connection.release();
-      return events;
-    } catch (error) {
-      console.error('Error finding all events:', error);
-      throw error;
     }
+    
+    // Filtrar por fecha desde
+    if (filters.date_from) {
+      query += ' AND e.event_date >= ?';
+      params.push(filters.date_from);
+    }
+    
+    // Filtrar por fecha hasta
+    if (filters.date_to) {
+      query += ' AND e.event_date <= ?';
+      params.push(filters.date_to);
+    }
+    
+    // Filtrar por eventos futuros (desde hoy)
+    if (filters.upcoming) {
+      query += ' AND e.event_date >= CURDATE()';
+    }
+    
+    // Filtrar por eventos pasados
+    if (filters.past) {
+      query += ' AND e.event_date < CURDATE()';
+    }
+    
+    // Filtrar por precio exacto (para eventos gratuitos)
+    if (filters.price !== undefined) {
+      query += ' AND e.price = ?';
+      params.push(filters.price);
+    }
+    
+    // Filtrar por precio máximo
+    if (filters.price_max !== undefined) {
+      query += ' AND e.price <= ?';
+      params.push(filters.price_max);
+    }
+    
+    // Búsqueda por término
+    if (filters.search) {
+      query += ' AND (e.event_name LIKE ? OR e.description LIKE ? OR e.location LIKE ?)';
+      const searchTerm = `%${filters.search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+    
+    // Ordenamiento - SIN prioridad a destacados
+    let orderClause = '';
+    
+    // Verificar si hay parámetros de ordenación específicos
+    if (filters.sort_by) {
+      // Añadir ordenamiento específico
+      orderClause = ` ORDER BY e.${filters.sort_by} ${filters.sort_order || 'ASC'}`;
+    } else {
+      // Ordenamiento por defecto por fecha del evento
+      orderClause = ' ORDER BY e.event_date ASC';
+    }
+    
+    query += orderClause;
+    
+    // Paginación
+    if (filters.limit) {
+      query += ' LIMIT ?';
+      params.push(parseInt(filters.limit));
+      
+      if (filters.offset || filters.offset === 0) {
+        query += ' OFFSET ?';
+        params.push(parseInt(filters.offset));
+      }
+    }
+    
+    console.log('Query final:', query);  // Debug log
+    console.log('Params:', params);      // Debug log
+    
+    const [events] = await connection.query(query, params);
+    
+    connection.release();
+    return events;
+  } catch (error) {
+    console.error('Error finding all events:', error);
+    throw error;
   }
+}
 
-  // Obtener eventos destacados
-  static async getFeatured(limit = 3) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      // Convertir limit a número para evitar el error de sintaxis SQL
-      const limitValue = parseInt(limit);
-      
-      const [events] = await connection.query(`
-        SELECT e.*, u.first_name, u.last_name, u.profile_image 
-        FROM events e
-        JOIN users u ON e.created_by = u.id
-        WHERE e.is_featured = 1 AND e.event_date >= CURDATE()
-        ORDER BY e.event_date ASC
-        LIMIT ?
-      `, [limitValue]);
-      
-      connection.release();
-      return events;
-    } catch (error) {
-      console.error('Error finding featured events:', error);
-      throw error;
-    }
+// Modificar también las funciones para eventos destacados y eventos de inicio
+static async getFeatured(limit = 3) {
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    // Convertir limit a número para evitar el error de sintaxis SQL
+    const limitValue = parseInt(limit);
+    
+    const [events] = await connection.query(`
+      SELECT e.*, u.first_name, u.last_name, u.profile_image 
+      FROM events e
+      JOIN users u ON e.created_by = u.id
+      WHERE e.is_featured = 1 AND e.event_date >= CURDATE() AND e.status = 'activo'
+      ORDER BY e.event_date ASC
+      LIMIT ?
+    `, [limitValue]);
+    
+    connection.release();
+    return events;
+  } catch (error) {
+    console.error('Error finding featured events:', error);
+    throw error;
   }
-  
-  // Obtener eventos para la página de inicio
-  static async getHomeEvents(limit = 6) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      // Convertir limit a número para evitar el error de sintaxis SQL
-      const limitValue = parseInt(limit);
-      
-      const [events] = await connection.query(`
-        SELECT e.*, u.first_name, u.last_name, u.profile_image 
-        FROM events e
-        JOIN users u ON e.created_by = u.id
-        WHERE e.is_home = 1 AND e.event_date >= CURDATE()
-        ORDER BY e.event_date ASC
-        LIMIT ?
-      `, [limitValue]);
-      
-      connection.release();
-      return events;
-    } catch (error) {
-      console.error('Error finding home events:', error);
-      throw error;
-    }
+}
+
+static async getHomeEvents(limit = 6) {
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    // Convertir limit a número para evitar el error de sintaxis SQL
+    const limitValue = parseInt(limit);
+    
+    const [events] = await connection.query(`
+      SELECT e.*, u.first_name, u.last_name, u.profile_image 
+      FROM events e
+      JOIN users u ON e.created_by = u.id
+      WHERE e.is_home = 1 AND e.event_date >= CURDATE() AND e.status = 'activo'
+      ORDER BY e.event_date ASC
+      LIMIT ?
+    `, [limitValue]);
+    
+    connection.release();
+    return events;
+  } catch (error) {
+    console.error('Error finding home events:', error);
+    throw error;
   }
+}
   
   // Obtener tipos de evento
   static async getEventTypes() {

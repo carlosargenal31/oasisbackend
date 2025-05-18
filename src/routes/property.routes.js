@@ -50,6 +50,12 @@ router.post('/', authenticate, upload.fields([
   { name: 'image', maxCount: 1 },
   { name: 'additional_images', maxCount: 10 }
 ]), validatePropertyData, PropertyController.createProperty);
+
+// En property.routes.js
+router.put('/:id', authenticate, upload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'additional_images', maxCount: 10 }
+]), validatePropertyData, PropertyController.updateProperty);
 router.put('/:id', authenticate, upload.single('image'), validatePropertyData, PropertyController.updateProperty);
 router.delete('/:id', authenticate, PropertyController.deleteProperty);
 

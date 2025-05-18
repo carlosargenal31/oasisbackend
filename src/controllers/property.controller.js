@@ -87,14 +87,26 @@ static createProperty = asyncErrorHandler(async (req, res) => {
     });
   });
 
-  static updateProperty = asyncErrorHandler(async (req, res) => {
+  // En property.controller.js, método updateProperty modificado
+static updateProperty = asyncErrorHandler(async (req, res) => {
+  try {
     // Obtener el archivo de imagen desde multer
-    const imageFile = req.file;
+    const files = req.files || {};
+    const mainImageFile = req.file || files?.image?.[0];
     
-    await PropertyService.updateProperty(
+    // Imágenes adicionales (si existen)
+    const additionalImageFiles = files?.additional_images || [];
+    
+    console.log("Archivos recibidos en updateProperty:", {
+      mainImageFile: mainImageFile ? mainImageFile.originalname : "No hay imagen principal",
+      additionalImageFiles: additionalImageFiles.length
+    });
+    
+    const result = await PropertyService.updateProperty(
       req.params.id,
       req.body,
-      imageFile,
+      mainImageFile,
+      additionalImageFiles,
       req.userId
     );
     
@@ -102,8 +114,15 @@ static createProperty = asyncErrorHandler(async (req, res) => {
       success: true,
       message: 'Propiedad actualizada exitosamente'
     });
-  });
-
+  } catch (error) {
+    console.error("Error completo en updateProperty controller:", error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al actualizar la propiedad',
+      error: error.message
+    });
+  }
+});
   static deleteProperty = asyncErrorHandler(async (req, res) => {
     await PropertyService.deleteProperty(
       req.params.id,
@@ -166,12 +185,16 @@ static searchProperties = asyncErrorHandler(async (req, res) => {
   }
 });
 // En property.controller.js, añadir nuevo método
+javascript// En property.controller.js, corregir el método getPropertyAmenities
 static getPropertyAmenities = asyncErrorHandler(async (req, res) => {
   const { id } = req.params;
   
-  // Obtener amenidades de la propiedad desde la tabla property_amenities
-  const connection = await mysqlPool.getConnection();
   try {
+    // Importar la conexión a la base de datos
+    const { mysqlPool } = await import('../config/database.js');
+    const connection = await mysqlPool.getConnection();
+    
+    // Obtener amenidades de la propiedad desde la tabla property_amenities
     const [amenities] = await connection.query(
       'SELECT property_id, amenity FROM property_amenities WHERE property_id = ?',
       [id]
@@ -185,9 +208,11 @@ static getPropertyAmenities = asyncErrorHandler(async (req, res) => {
     });
   } catch (error) {
     console.error('Error al obtener amenidades:', error);
-    throw error;
-  } finally {
-    if (connection) connection.release();
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener amenidades',
+      error: error.message
+    });
   }
 });
   
