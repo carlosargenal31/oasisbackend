@@ -16,7 +16,6 @@ export const createEventTable = async () => {
       created_by INT NOT NULL,
       image_url VARCHAR(255),
       is_featured BOOLEAN DEFAULT FALSE,
-      is_home BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       FOREIGN KEY (created_by) REFERENCES users(id)
@@ -33,7 +32,6 @@ export const createEventTable = async () => {
     throw error;
   }
 };
-
 export class Event {
   // Encontrar evento por ID
   static async findById(id) {
@@ -344,86 +342,119 @@ static async getHomeEvents(limit = 6) {
     }
   }
   
-  // Crear un nuevo evento
-  static async create(eventData) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      const [result] = await connection.query(`
-        INSERT INTO events (
-          event_name, event_date, event_time, price, location, 
-          description, event_type, status, created_by, 
-          image_url, is_featured, is_home
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        eventData.event_name,
-        eventData.event_date,
-        eventData.event_time,
-        eventData.price || 0.00,
-        eventData.location,
-        eventData.description,
-        eventData.event_type,
-        eventData.status || 'activo',
-        eventData.created_by,
-        eventData.image_url || null,
-        eventData.is_featured ? 1 : 0,
-        eventData.is_home ? 1 : 0
-      ]);
-      
-      connection.release();
-      return result.insertId;
-    } catch (error) {
-      console.error('Error creating event:', error);
-      throw error;
+  // En event.model.js - método create
+static async create(eventData) {
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    // Asegurarse de que event_time tiene el formato correcto
+    let eventTime = eventData.event_time;
+    if (eventTime && eventTime.split(':').length === 2) {
+      eventTime = `${eventTime}:00`;
     }
+    
+    console.log('Insertando evento en la BD con datos:', {
+      event_name: eventData.event_name,
+      event_date: eventData.event_date,
+      event_time: eventTime,
+      price: eventData.price || 0.00,
+      location: eventData.location,
+      description: eventData.description,
+      event_type: eventData.event_type,
+      status: eventData.status || 'activo',
+      created_by: eventData.created_by,
+      is_featured: eventData.is_featured ? 1 : 0
+    });
+    
+    // MODIFICADO: Quitar is_home del query si no existe en la tabla
+    const [result] = await connection.query(`
+      INSERT INTO events (
+        event_name, event_date, event_time, price, location, 
+        description, event_type, status, created_by, 
+        image_url, is_featured
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      eventData.event_name,
+      eventData.event_date,
+      eventTime, // Usar la variable formateada
+      eventData.price || 0.00,
+      eventData.location,
+      eventData.description || '',
+      eventData.event_type,
+      eventData.status || 'activo',
+      eventData.created_by,
+      eventData.image_url || null,
+      eventData.is_featured ? 1 : 0
+    ]);
+    
+    connection.release();
+    console.log(`Evento creado con ID: ${result.insertId}`);
+    return result.insertId;
+  } catch (error) {
+    console.error('Error detallado al crear evento en BD:', error);
+    throw error;
   }
-  
-  // Actualizar un evento
-  static async update(id, eventData) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      // Construir consulta dinámica
-      const updateFields = [];
-      const updateValues = [];
-      
-      Object.entries(eventData).forEach(([key, value]) => {
-        if (value !== undefined && 
-            key !== 'id' && 
-            key !== 'created_at' && 
-            key !== 'updated_at') {
-          
-          // Convertir booleanos a 1/0 para MySQL
-          if (key === 'is_featured' || key === 'is_home') {
-            updateFields.push(`${key} = ?`);
-            updateValues.push(value ? 1 : 0);
-          } else {
-            updateFields.push(`${key} = ?`);
-            updateValues.push(value);
-          }
+}
+
+// En event.model.js - método update
+static async update(id, eventData) {
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    // Eliminar campos que no deberían actualizarse
+    const cleanedData = { ...eventData };
+    
+    // Nunca actualizar estos campos
+    delete cleanedData.id;
+    delete cleanedData.created_by;
+    delete cleanedData.created_at;
+    delete cleanedData.updated_at;
+    
+    // Formatear event_time si es necesario
+    if (cleanedData.event_time && cleanedData.event_time.split(':').length === 2) {
+      cleanedData.event_time = `${cleanedData.event_time}:00`;
+    }
+    
+    // Construir consulta dinámica
+    const updateFields = [];
+    const updateValues = [];
+    
+    Object.entries(cleanedData).forEach(([key, value]) => {
+      if (value !== undefined) {
+        // Convertir booleanos a 1/0 para MySQL
+        if (key === 'is_featured') {
+          updateFields.push(`${key} = ?`);
+          updateValues.push(value === true || value === 'true' ? 1 : 0);
+        } else {
+          updateFields.push(`${key} = ?`);
+          updateValues.push(value);
         }
-      });
-      
-      if (updateFields.length === 0) {
-        connection.release();
-        return false; // No hay campos para actualizar
       }
-      
-      updateValues.push(id); // Agregar ID al final para WHERE
-      
-      const [result] = await connection.query(
-        `UPDATE events SET ${updateFields.join(', ')} WHERE id = ?`,
-        updateValues
-      );
-      
+    });
+    
+    if (updateFields.length === 0) {
       connection.release();
-      return result.affectedRows > 0;
-    } catch (error) {
-      console.error('Error updating event:', error);
-      throw error;
+      return false; // No hay campos para actualizar
     }
+    
+    updateValues.push(id); // Agregar ID al final para WHERE
+    
+    console.log('Query de actualización:', `UPDATE events SET ${updateFields.join(', ')} WHERE id = ?`);
+    console.log('Valores:', updateValues);
+    
+    const [result] = await connection.query(
+      `UPDATE events SET ${updateFields.join(', ')} WHERE id = ?`,
+      updateValues
+    );
+    
+    connection.release();
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error('Error updating event:', error);
+    throw error;
   }
+}
   
   // Eliminar un evento
   static async delete(id) {

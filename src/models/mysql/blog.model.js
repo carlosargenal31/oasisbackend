@@ -1,6 +1,7 @@
 // src/models/mysql/blog.model.js
 import { mysqlPool } from '../../config/database.js';
 
+// Modificar la función createBlogTable para incluir active
 export const createBlogTable = async () => {
   const query = `
     CREATE TABLE IF NOT EXISTS blogs (
@@ -12,6 +13,7 @@ export const createBlogTable = async () => {
       image_url VARCHAR(255),
       content TEXT,
       is_featured BOOLEAN DEFAULT FALSE,
+      active BOOLEAN DEFAULT TRUE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       FOREIGN KEY (author_id) REFERENCES users(id)
@@ -60,9 +62,7 @@ export class Blog {
     }
   }
   
-  // Obtener todos los blogs con opciones de filtro
-  // Modificación en el método findAll de la clase Blog en blog.model.js
-static async findAll(filters = {}) {
+  static async findAll(filters = {}) {
   try {
     const connection = await mysqlPool.getConnection();
     
@@ -93,6 +93,13 @@ static async findAll(filters = {}) {
       params.push(filters.featured ? 1 : 0);
     }
     
+    // Filtrar por active (estado activo/inactivo)
+    if (filters.active !== undefined) {
+      query += ' AND b.active = ?';
+      params.push(filters.active ? 1 : 0);
+    }
+    // IMPORTANTE: Ya no añadimos el filtro por defecto para active=1 para que el admin pueda ver todos
+    
     // Búsqueda por término
     if (filters.search) {
       query += ' AND (b.title LIKE ? OR b.content LIKE ?)';
@@ -100,7 +107,7 @@ static async findAll(filters = {}) {
       params.push(searchTerm, searchTerm);
     }
     
-    // Ordenamiento - MODIFICADO PARA SOPORTAR MÚLTIPLES CAMPOS Y DIRECCIONES
+    // Ordenamiento
     let orderClause = ' ORDER BY b.is_featured DESC';
     
     // Verificar si hay parámetros de ordenación específicos
@@ -134,7 +141,6 @@ static async findAll(filters = {}) {
     throw error;
   }
 }
-
   // Obtener blogs destacados
   // Corregir la función getFeatured en src/models/mysql/blog.model.js
 static async getFeatured(limit = 2) {
@@ -149,6 +155,7 @@ static async getFeatured(limit = 2) {
       FROM blogs b
       JOIN users u ON b.author_id = u.id
       WHERE b.is_featured = 1
+      AND b.active = 1
       ORDER BY b.published_at DESC
       LIMIT ?
     `, [limitValue]);
@@ -221,30 +228,31 @@ static async getFeatured(limit = 2) {
     }
   }
   
-  // Crear un nuevo blog
-  static async create(blogData) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      const [result] = await connection.query(`
-        INSERT INTO blogs (title, category, author_id, image_url, content, is_featured)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [
-        blogData.title,
-        blogData.category,
-        blogData.author_id,
-        blogData.image_url || null,
-        blogData.content,
-        blogData.is_featured ? 1 : 0
-      ]);
-      
-      connection.release();
-      return result.insertId;
-    } catch (error) {
-      console.error('Error creating blog:', error);
-      throw error;
-    }
+  // Modificar el método create para incluir active
+static async create(blogData) {
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    const [result] = await connection.query(`
+      INSERT INTO blogs (title, category, author_id, image_url, content, is_featured, active)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      blogData.title,
+      blogData.category,
+      blogData.author_id,
+      blogData.image_url || null,
+      blogData.content,
+      blogData.is_featured ? 1 : 0,
+      blogData.active !== undefined ? (blogData.active ? 1 : 0) : 1
+    ]);
+    
+    connection.release();
+    return result.insertId;
+  } catch (error) {
+    console.error('Error creating blog:', error);
+    throw error;
   }
+}
   
   // Actualizar un blog
   static async update(id, blogData) {
@@ -293,6 +301,23 @@ static async getFeatured(limit = 2) {
     }
   }
   
+  // Añadir al final de la clase Blog
+static async updateActiveStatus(id, isActive) {
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    const [result] = await connection.query(
+      'UPDATE blogs SET active = ? WHERE id = ?',
+      [isActive ? 1 : 0, id]
+    );
+    
+    connection.release();
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error('Error updating active status:', error);
+    throw error;
+  }
+}
   // Eliminar un blog
   static async delete(id) {
     try {

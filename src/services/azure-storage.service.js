@@ -35,33 +35,35 @@ class AzureStorageService {
     }
   }
 
-  async uploadImage(file, propertyId) {
-    try {
-      // Aseguramos que el contenedor existe
-      await this.createContainerIfNotExists();
-      
-      // Crear un nombre único para el archivo
-      const extension = file.originalname.split('.').pop();
-      const fileName = `property-${propertyId}-${uuidv4()}.${extension}`;
-      
-      // Obtener el cliente del blob
-      const blockBlobClient = this.containerClient.getBlockBlobClient(fileName);
-      
-      // Subir el archivo
-      await blockBlobClient.upload(file.buffer, file.buffer.length, {
-        blobHTTPHeaders: {
-          blobContentType: file.mimetype
-        }
-      });
-      
-      // Devolver la URL del blob
-      const imageUrl = blockBlobClient.url;
-      return imageUrl;
-    } catch (error) {
-      console.error('Error uploading image to Azure Storage:', error);
-      throw error;
-    }
+  // src/services/azure-storage.service.js - Método uploadImage actualizado
+async uploadImage(file, entityType = 'property', entityId = 'default') {
+  try {
+    // Aseguramos que el contenedor existe
+    await this.createContainerIfNotExists();
+    
+    // Crear un nombre único para el archivo
+    const extension = file.originalname.split('.').pop();
+    const fileName = `${entityType}-${entityId}-${uuidv4()}.${extension}`;
+    
+    // Obtener el cliente del blob
+    const blockBlobClient = this.containerClient.getBlockBlobClient(fileName);
+    
+    // Subir el archivo
+    await blockBlobClient.upload(file.buffer, file.buffer.length, {
+      blobHTTPHeaders: {
+        blobContentType: file.mimetype
+      }
+    });
+    
+    // Devolver la URL del blob
+    const imageUrl = blockBlobClient.url;
+    console.log(`Imagen subida correctamente. Tipo: ${entityType}, URL: ${imageUrl}`);
+    return imageUrl;
+  } catch (error) {
+    console.error(`Error subiendo imagen a Azure Storage:`, error);
+    throw error;
   }
+}
 
   async deleteImage(imageUrl) {
     try {
