@@ -13,7 +13,36 @@ import {
 import { User } from '../models/mysql/user.model.js';
 
 export class UserService {
-  static async createUser(userData) {
+  static async validateEmail(email) {
+    // Validaciones iniciales
+    if (!email) {
+      throw new ValidationError('Datos de usuario incompletos', [
+        'email'
+      ]);
+    }
+
+    const connection = await mysqlPool.getConnection();
+    try {
+      // Verificar si el email ya existe
+      const [existingUser] = await connection.query(
+        'SELECT id FROM users WHERE email = ?',
+        [email]
+      );
+
+      if (existingUser.length = 0) {
+        throw new ConflictError('El email no está registrado');
+      }
+
+      return true;
+    } catch (error) {
+
+      throw new DatabaseError('Error al autentificar email');
+    } finally {
+      connection.release();
+    }
+  }
+
+    static async createUser(userData) {
     // Validaciones iniciales
     if (!userData.email || !userData.first_name || !userData.last_name) {
       throw new ValidationError('Datos de usuario incompletos', [
@@ -387,31 +416,31 @@ static async getHostAdditionalData(userId) {
     }
   }
 
-  static async updatePassword(userId, currentPassword, newPassword) {
-    if (!userId || !currentPassword || !newPassword) {
-      throw new ValidationError('ID de usuario, contraseña actual y nueva contraseña son requeridos');
+  static async updatePassword(token, newPassword) {
+    if ( !newPassword) {
+      throw new ValidationError('Nueva contraseña es requerida');
     }
 
-    if (newPassword.length < 6) {
-      throw new ValidationError('La nueva contraseña debe tener al menos 6 caracteres');
+    if (newPassword.length < 8) {
+      throw new ValidationError('La nueva contraseña debe tener al menos 8 caracteres');
     }
 
     const connection = await mysqlPool.getConnection();
     try {
       // Verificar si el usuario existe y obtener sus credenciales
-      const [credentials] = await connection.query(
-        'SELECT password FROM auth_credentials WHERE user_id = ?',
-        [userId]
+      const [user] = await connection.query(
+        'SELECT user_id FROM auth_credentials WHERE reset_token = ?',
+        [token]
       );
 
-      if (credentials.length === 0) {
+      if (user.length === 0) {
         throw new NotFoundError('Credenciales de usuario no encontradas');
       }
 
       // Verificar contraseña actual
-      const isMatch = await bcrypt.compare(currentPassword, credentials[0].password);
+      const isMatch = await bcrypt.compare(newPassword, user[0].password);
       if (!isMatch) {
-        throw new ValidationError('La contraseña actual es incorrecta');
+        throw new ValidationError('La contraseña debe ser distinta a una vieja');
       }
 
       // Hashear nueva contraseña
@@ -420,7 +449,7 @@ static async getHostAdditionalData(userId) {
       // Actualizar contraseña
       await connection.query(
         'UPDATE auth_credentials SET password = ? WHERE user_id = ?',
-        [hashedPassword, userId]
+        [hashedPassword, user[0].user_id]
       );
 
       return true;
