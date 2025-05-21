@@ -29,11 +29,17 @@ export const validateEventData = (req, res, next) => {
     }
   }
 
-  // Validar formato de hora
+  // Validar formato de hora - MODIFICADO para aceptar tanto HH:MM como HH:MM:SS
   if (event_time) {
-    const timeRegex = /^\d{2}:\d{2}:\d{2}$/;
+    // Aceptar tanto HH:MM como HH:MM:SS
+    const timeRegex = /^\d{2}:\d{2}(:\d{2})?$/;
     if (!timeRegex.test(event_time)) {
-      throw new ValidationError('El formato de hora debe ser HH:MM:SS');
+      throw new ValidationError('El formato de hora debe ser HH:MM o HH:MM:SS');
+    }
+    
+    // Si no tiene segundos, añadirlos al req.body
+    if (event_time.split(':').length === 2) {
+      req.body.event_time = `${event_time}:00`;
     }
   }
 
@@ -66,11 +72,25 @@ export const validateEventData = (req, res, next) => {
   // No es necesario validar los campos is_featured e is_home, ya que son opcionales
   // Si se proporcionan, deben ser valores booleanos
   if (req.body.is_featured !== undefined && typeof req.body.is_featured !== 'boolean') {
-    throw new ValidationError('El campo is_featured debe ser un valor booleano');
+    // Convertir string 'true'/'false' a booleano
+    if (req.body.is_featured === 'true') {
+      req.body.is_featured = true;
+    } else if (req.body.is_featured === 'false') {
+      req.body.is_featured = false;
+    } else {
+      throw new ValidationError('El campo is_featured debe ser un valor booleano');
+    }
   }
 
   if (req.body.is_home !== undefined && typeof req.body.is_home !== 'boolean') {
-    throw new ValidationError('El campo is_home debe ser un valor booleano');
+    // Convertir string 'true'/'false' a booleano
+    if (req.body.is_home === 'true') {
+      req.body.is_home = true;
+    } else if (req.body.is_home === 'false') {
+      req.body.is_home = false;
+    } else {
+      throw new ValidationError('El campo is_home debe ser un valor booleano');
+    }
   }
 
   next();

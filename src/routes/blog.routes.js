@@ -34,6 +34,7 @@ router.post('/', authenticate, validateBlogData, BlogController.createBlog);
 router.put('/:id', authenticate, validateBlogData, BlogController.updateBlog);
 router.delete('/:id', authenticate, BlogController.deleteBlog);
 router.post('/image', authenticate, upload.single('image'), uploadBlogImage);
-router.put('/:id/featured', authenticate, BlogController.updateFeaturedStatus);
+router.patch('/:id/featured', authenticate, BlogController.updateFeaturedStatus);
+router.patch('/:id/status', authenticate, BlogController.updateBlogStatus);
 
 export default router;

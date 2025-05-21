@@ -5,27 +5,51 @@ import { asyncErrorHandler } from '../utils/errors/index.js';
 
 export class BlogController {
   static getBlogs = asyncErrorHandler(async (req, res) => {
-    const filters = {
-      category: req.query.category,
-      search: req.query.search,
-      author_id: req.query.author_id,
-      limit: req.query.limit,
-      offset: req.query.offset,
-      featured: req.query.featured !== undefined ? req.query.featured === 'true' : undefined
-    };
+  const filters = {
+    category: req.query.category,
+    search: req.query.search,
+    author_id: req.query.author_id,
+    limit: req.query.limit,
+    offset: req.query.offset,
+    featured: req.query.featured !== undefined ? req.query.featured === 'true' : undefined
+  };
 
-    const result = await BlogService.getBlogs(filters);
-    
-    res.json({
-      success: true,
-      data: {
-        blogs: result.blogs,
-        total: result.total,
-        page: result.page,
-        limit: result.limit
-      }
-    });
+  // Verificar si es una solicitud autenticada de un administrador
+  let isAdmin = false;
+  if (req.userId) {
+    const connection = await mysqlPool.getConnection();
+    try {
+      const [userRows] = await connection.query('SELECT role FROM users WHERE id = ?', [req.userId]);
+      isAdmin = userRows.length > 0 && userRows[0].role === 'admin';
+      connection.release();
+    } catch (error) {
+      console.error('Error verificando rol de usuario:', error);
+    }
+  }
+  
+  // Si no es administrador o no está explícitamente solicitando blogs inactivos,
+  // añadir el filtro para mostrar solo blogs activos
+  if (!isAdmin || req.query.active === undefined) {
+    // Para solicitudes públicas o no de administrador, mostrar solo activos por defecto
+    filters.active = true;
+  } else if (req.query.active !== undefined) {
+    // Si el admin solicita blogs explícitamente por su estado activo
+    filters.active = req.query.active === 'true';
+  }
+  // Si es admin y no especifica filtro, no agregar filtro de active para mostrar todos
+
+  const result = await BlogService.getBlogs(filters);
+  
+  res.json({
+    success: true,
+    data: {
+      blogs: result.blogs,
+      total: result.total,
+      page: result.page,
+      limit: result.limit
+    }
   });
+});
 
   static getFeaturedBlogs = asyncErrorHandler(async (req, res) => {
     const limit = req.query.limit || 2;
@@ -135,26 +159,47 @@ export class BlogController {
       });
     }
   });
-
-  static updateFeaturedStatus = asyncErrorHandler(async (req, res) => {
-    const { id } = req.params;
-    const { is_featured } = req.body;
-    
-    if (is_featured === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: 'El campo is_featured es requerido'
-      });
-    }
-    
-    await BlogService.updateFeaturedStatus(id, is_featured, req.userId);
-    
-    res.json({
-      success: true,
-      message: `Blog ${is_featured ? 'marcado como destacado' : 'desmarcado como destacado'} exitosamente`
+// Añadir al final de src/controllers/blog.controller.js
+static updateBlogStatus = asyncErrorHandler(async (req, res) => {
+  const { id } = req.params;
+  const { active } = req.body;
+  
+  if (active === undefined) {
+    return res.status(400).json({
+      success: false,
+      message: 'El campo active es requerido'
     });
+  }
+  
+  await BlogService.updateBlogStatus(id, active, req.userId);
+  
+  res.json({
+    success: true,
+    message: `Blog ${active ? 'activado' : 'desactivado'} exitosamente`
   });
+});
+  // src/controllers/blog.controller.js - Actualizar el método updateFeaturedStatus
+static updateFeaturedStatus = asyncErrorHandler(async (req, res) => {
+  const { id } = req.params;
+  const { is_featured } = req.body;
+  
+  if (is_featured === undefined) {
+    return res.status(400).json({
+      success: false,
+      message: 'El campo is_featured es requerido'
+    });
+  }
+  
+  await BlogService.updateFeaturedStatus(id, is_featured, req.userId);
+  
+  res.json({
+    success: true,
+    message: `Blog ${is_featured ? 'marcado como destacado' : 'desmarcado como destacado'} exitosamente`
+  });
+});
 }
+
+
 
 // Al final de blog.controller.js
 export const uploadBlogImage = BlogController.uploadBlogImage;

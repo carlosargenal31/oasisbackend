@@ -145,6 +145,42 @@ static async getFeaturedBlogs(limit = 2) {
       connection.release();
     }
   }
+  // Añadir al final de src/services/blog.service.js
+static async updateBlogStatus(id, isActive, userId) {
+  if (!id) {
+    throw new ValidationError('ID de blog es requerido');
+  }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    // Verificar si el blog existe
+    const blog = await Blog.findById(id);
+    
+    if (!blog) {
+      throw new NotFoundError('Blog no encontrado');
+    }
+    
+    // Verificar autorización - solo el autor puede cambiar el estado
+    if (blog.author_id !== parseInt(userId)) {
+      throw new AuthorizationError('No autorizado para actualizar este blog');
+    }
+
+    // Actualizar estado activo
+    const updated = await Blog.updateActiveStatus(id, isActive);
+    
+    return updated;
+  } catch (error) {
+    console.error('Error updating active status:', error);
+    if (error instanceof ValidationError || 
+        error instanceof NotFoundError || 
+        error instanceof AuthorizationError) {
+      throw error;
+    }
+    throw new DatabaseError('Error al actualizar el estado del blog');
+  } finally {
+    connection.release();
+  }
+}
 
   static async deleteBlog(id, userId) {
     if (!id) {
@@ -211,38 +247,46 @@ static async getFeaturedBlogs(limit = 2) {
   }
 
   static async updateFeaturedStatus(id, isFeatured, userId) {
-    if (!id) {
-      throw new ValidationError('ID de blog es requerido');
-    }
-
-    const connection = await mysqlPool.getConnection();
-    try {
-      // Verificar si el blog existe
-      const blog = await Blog.findById(id);
-      
-      if (!blog) {
-        throw new NotFoundError('Blog no encontrado');
-      }
-      
-      // Verificar autorización - solo el autor puede cambiar el estado destacado
-      if (blog.author_id !== parseInt(userId)) {
-        throw new AuthorizationError('No autorizado para actualizar este blog');
-      }
-
-      // Actualizar estado destacado
-      const updated = await Blog.updateFeaturedStatus(id, isFeatured);
-      
-      return updated;
-    } catch (error) {
-      console.error('Error updating featured status:', error);
-      if (error instanceof ValidationError || 
-          error instanceof NotFoundError || 
-          error instanceof AuthorizationError) {
-        throw error;
-      }
-      throw new DatabaseError('Error al actualizar el estado destacado del blog');
-    } finally {
-      connection.release();
-    }
+  if (!id) {
+    throw new ValidationError('ID de blog es requerido');
   }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    // Verificar si el blog existe
+    const blog = await Blog.findById(id);
+    
+    if (!blog) {
+      throw new NotFoundError('Blog no encontrado');
+    }
+    
+    // Buscar información del usuario para verificar si es admin
+    const [userRows] = await connection.query(
+      'SELECT role FROM users WHERE id = ?', 
+      [userId]
+    );
+    
+    const isAdmin = userRows.length > 0 && userRows[0].role === 'admin';
+    
+    // Verificar autorización - solo el autor o admins pueden cambiar el estado destacado
+    if (blog.author_id !== parseInt(userId) && !isAdmin) {
+      throw new AuthorizationError('No autorizado para actualizar este blog');
+    }
+
+    // Actualizar estado destacado
+    const updated = await Blog.updateFeaturedStatus(id, isFeatured);
+    
+    return updated;
+  } catch (error) {
+    console.error('Error updating featured status:', error);
+    if (error instanceof ValidationError || 
+        error instanceof NotFoundError || 
+        error instanceof AuthorizationError) {
+      throw error;
+    }
+    throw new DatabaseError('Error al actualizar el estado destacado del blog');
+  } finally {
+    connection.release();
+  }
+}
 }
