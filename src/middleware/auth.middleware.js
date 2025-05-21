@@ -2,6 +2,7 @@
 import jwt from 'jsonwebtoken';
 import { ValidationError, AuthenticationError } from '../utils/errors/index.js';
 import { mysqlPool } from '../config/database.js';
+import { UserService} from '../services/user.service.js'
 
 export const authenticate = async (req, res, next) => {
   try {
@@ -136,6 +137,14 @@ export const validateLoginData = (req, res, next) => {
   }
 
   next();
+};
+
+export const validateEmailExists = (req, res, next) => {
+  const { email } = req.body;
+
+  if (UserService.validateEmail(email)  ) {
+    next();
+  }
 };
 
 export const validatePasswordChange = (req, res, next) => {

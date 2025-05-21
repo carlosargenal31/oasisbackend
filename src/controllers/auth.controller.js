@@ -1,6 +1,8 @@
 // src/controllers/auth.controller.js
 import AuthService from '../services/auth.service.js';
 import { asyncErrorHandler } from '../utils/errors/error-handler.js';
+import globalVariable from '../config/index.js'
+import { sendResetEmail } from '../services/email.service.js'
 
 export class AuthController {
   static register = asyncErrorHandler(async (req, res) => {
@@ -41,9 +43,8 @@ export class AuthController {
   });
 
   static changePassword = asyncErrorHandler(async (req, res) => {
-    const userId = req.userId;
-    const { currentPassword, newPassword } = req.body;
-    await AuthService.changePassword(userId, currentPassword, newPassword);
+    const { token, newPassword } = req.body;
+    await AuthService.resetPassword(token, newPassword);
     res.json({
       success: true,
       message: 'Contraseña actualizada exitosamente'
@@ -53,11 +54,12 @@ export class AuthController {
   static requestPasswordReset = asyncErrorHandler(async (req, res) => {
     const { email } = req.body;
     const resetToken = await AuthService.requestPasswordReset(email);
+    const resetLink = `${globalVariable.clientUrl}auth/forgot-password?token=${resetToken}`
+    await sendResetEmail(email, resetLink);
     
     res.json({
       success: true,
-      message: 'Instrucciones de reseteo enviadas al email (simulación)',
-      resetToken // Solo para pruebas, en producción no se devolvería
+      message: 'Instrucciones de reseteo enviadas al email (simulación)'
     });
   });
 

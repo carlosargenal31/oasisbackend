@@ -105,6 +105,55 @@ class AuthService {
     }
   }
 
+    static async updatePassword(token, newPassword) {
+      if ( !newPassword) {
+        throw new ValidationError('Nueva contraseña es requerida');
+      }
+  
+      if (newPassword.length < 8) {
+        throw new ValidationError('La nueva contraseña debe tener al menos 8 caracteres');
+      }
+  
+      const connection = await mysqlPool.getConnection();
+      try {
+        // Verificar si el usuario existe y obtener sus credenciales
+        const [user] = await connection.query(
+          'SELECT user_id FROM auth_credentials WHERE reset_token = ?',
+          [token]
+        );
+  
+        if (user.length === 0) {
+          throw new NotFoundError('Credenciales de usuario no encontradas');
+        }
+  
+        // Verificar contraseña actual
+        const isMatch = await bcrypt.compare(newPassword, user[0].password);
+        if (!isMatch) {
+          throw new ValidationError('La contraseña debe ser distinta a una vieja');
+        }
+  
+        // Hashear nueva contraseña
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+  
+        // Actualizar contraseña
+        await connection.query(
+          'UPDATE auth_credentials SET password = ? WHERE user_id = ?',
+          [hashedPassword, user[0].user_id]
+        );
+  
+        return true;
+      } catch (error) {
+        console.error('Error updating password:', error);
+        if (error instanceof ValidationError || 
+            error instanceof NotFoundError) {
+          throw error;
+        }
+        throw new DatabaseError('Error al actualizar la contraseña');
+      } finally {
+        connection.release();
+      }
+    }
+
   static async login(email, password) {
     try {
       console.log(`Attempting login with: ${email}`);
@@ -256,10 +305,13 @@ class AuthService {
     try {
       // Find user with the given reset token
       const [credentials] = await mysqlPool.query(
-        'SELECT * FROM auth_credentials WHERE reset_token = ? AND reset_token_expires > ?',
-        [token, new Date()]
+        'SELECT * FROM auth_credentials WHERE reset_token = ?',
+        [token]
       );
-
+      console.log('antes antes')
+      console.log(newPassword)
+      console.log('despues despues')
+      console.log(credentials)
       if (credentials.length === 0) {
         throw new ValidationError('Invalid or expired reset token');
       }
@@ -268,10 +320,11 @@ class AuthService {
 
       // Hash new password
       const hashedPassword = await bcrypt.hash(newPassword, 10);
+      console.log(hashedPassword)
 
       // Update user password and clear reset token
       await mysqlPool.query(
-        'UPDATE auth_credentials SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
+        'UPDATE auth_credentials SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ? AND reset_token_expires > NOW()',
         [hashedPassword, credential.id]
       );
       
@@ -289,7 +342,7 @@ class AuthService {
 
   static async changePassword(userId, currentPassword, newPassword) {
     try {
-      // Find credentials by user ID
+      
       const [credentials] = await mysqlPool.query(
         'SELECT * FROM auth_credentials WHERE user_id = ?',
         [userId]
