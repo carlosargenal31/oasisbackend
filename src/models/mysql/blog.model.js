@@ -62,7 +62,7 @@ export class Blog {
     }
   }
   
-  static async findAll(filters = {}) {
+ static async findAll(filters = {}) {
   try {
     const connection = await mysqlPool.getConnection();
     
@@ -98,7 +98,7 @@ export class Blog {
       query += ' AND b.active = ?';
       params.push(filters.active ? 1 : 0);
     }
-    // IMPORTANTE: Ya no añadimos el filtro por defecto para active=1 para que el admin pueda ver todos
+    // IMPORTANTE: No añadimos el filtro por defecto para active=1 para que el admin pueda ver todos
     
     // Búsqueda por término
     if (filters.search) {
@@ -187,46 +187,52 @@ static async getFeatured(limit = 2) {
   
   // Contar blogs por filtros
   static async count(filters = {}) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      let query = 'SELECT COUNT(*) as count FROM blogs WHERE 1=1';
-      const params = [];
-      
-      // Filtrar por categoría
-      if (filters.category) {
-        query += ' AND category = ?';
-        params.push(filters.category);
-      }
-      
-      // Filtrar por autor
-      if (filters.author_id) {
-        query += ' AND author_id = ?';
-        params.push(filters.author_id);
-      }
-      
-      // Filtrar por is_featured
-      if (filters.featured !== undefined) {
-        query += ' AND is_featured = ?';
-        params.push(filters.featured ? 1 : 0);
-      }
-      
-      // Búsqueda por término
-      if (filters.search) {
-        query += ' AND (title LIKE ? OR content LIKE ?)';
-        const searchTerm = `%${filters.search}%`;
-        params.push(searchTerm, searchTerm);
-      }
-      
-      const [result] = await connection.query(query, params);
-      
-      connection.release();
-      return result[0].count;
-    } catch (error) {
-      console.error('Error counting blogs:', error);
-      throw error;
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    let query = 'SELECT COUNT(*) as count FROM blogs WHERE 1=1';
+    const params = [];
+    
+    // Filtrar por categoría
+    if (filters.category) {
+      query += ' AND category = ?';
+      params.push(filters.category);
     }
+    
+    // Filtrar por autor
+    if (filters.author_id) {
+      query += ' AND author_id = ?';
+      params.push(filters.author_id);
+    }
+    
+    // Filtrar por is_featured
+    if (filters.featured !== undefined) {
+      query += ' AND is_featured = ?';
+      params.push(filters.featured ? 1 : 0);
+    }
+    
+    // Filtrar por active si se proporciona
+    if (filters.active !== undefined) {
+      query += ' AND active = ?';
+      params.push(filters.active ? 1 : 0);
+    }
+    
+    // Búsqueda por término
+    if (filters.search) {
+      query += ' AND (title LIKE ? OR content LIKE ?)';
+      const searchTerm = `%${filters.search}%`;
+      params.push(searchTerm, searchTerm);
+    }
+    
+    const [result] = await connection.query(query, params);
+    
+    connection.release();
+    return result[0].count;
+  } catch (error) {
+    console.error('Error counting blogs:', error);
+    throw error;
   }
+}
   
   // Modificar el método create para incluir active
 static async create(blogData) {

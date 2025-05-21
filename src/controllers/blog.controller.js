@@ -1,10 +1,14 @@
 // src/controllers/blog.controller.js
+
 import { BlogService } from '../services/blog.service.js';
 import { azureStorageService } from '../services/azure-storage.service.js';
 import { asyncErrorHandler } from '../utils/errors/index.js';
+import { mysqlPool } from '../config/database.js';
+import { Blog } from '../models/mysql/blog.model.js';
 
 export class BlogController {
-  static getBlogs = asyncErrorHandler(async (req, res) => {
+  // Método getBlogs mejorado para manejar la visualización de blogs activos/inactivos
+static getBlogs = asyncErrorHandler(async (req, res) => {
   const filters = {
     category: req.query.category,
     search: req.query.search,
@@ -127,38 +131,160 @@ export class BlogController {
       data: blogs
     });
   });
+  // Método específico para el panel de administración que devuelve todos los blogs
+// Implementación correcta de getAdminBlogs para src/controllers/blog.controller.js
+
+// Método específico para el panel de administración que devuelve todos los blogs
+// Método específico para el panel de administración que devuelve todos los blogs
+static getAdminBlogs = asyncErrorHandler(async (req, res) => {
+  // Verificar si el usuario es administrador
+  const connection = await mysqlPool.getConnection();
+  try {
+    const [userRows] = await connection.query('SELECT role FROM users WHERE id = ?', [req.userId]);
+    const isAdmin = userRows.length > 0 && userRows[0].role === 'admin';
+    connection.release();
+    
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'No tiene permisos para acceder a esta función'
+      });
+    }
+    
+    // Preparar filtros, pero no incluir active por defecto para ver todos los blogs
+    const filters = {
+      category: req.query.category,
+      search: req.query.search,
+      author_id: req.query.author_id,
+      limit: req.query.limit || 100, // Default a 100 para mostrar muchos blogs
+      offset: req.query.offset || 0,
+      featured: req.query.featured !== undefined ? req.query.featured === 'true' : undefined
+    };
+    
+    // Solo si se proporciona explícitamente un filtro de active, aplicarlo
+    if (req.query.active !== undefined) {
+      filters.active = req.query.active === 'true';
+    }
+    
+    // Obtener blogs con los filtros proporcionados
+    const blogs = await Blog.findAll(filters);
+    
+    // Obtener el total de blogs con los mismos filtros (sin paginación)
+    const total = await Blog.count(filters);
+    
+    res.json({
+      success: true,
+      data: {
+        blogs,
+        total,
+        page: filters.offset ? Math.floor(filters.offset / filters.limit) + 1 : 1,
+        limit: filters.limit
+      }
+    });
+  } catch (error) {
+    console.error('Error getting admin blogs:', error);
+    if (connection) {
+      connection.release();
+    }
+    throw error;
+  }
+});
+ 
+
+// Controlador para actualizar la imagen de un blog
+static updateBlogImage = asyncErrorHandler(async (req, res) => {
+  const { id } = req.params;
+  const { image_url } = req.body;
   
-  static uploadBlogImage = asyncErrorHandler(async (req, res) => {
+  if (!image_url) {
+    return res.status(400).json({
+      success: false,
+      message: 'URL de imagen es requerida'
+    });
+  }
+  
+  try {
+    // Buscar el blog para verificar permisos
+    const blog = await Blog.findById(id);
+    
+    if (!blog) {
+      return res.status(404).json({
+        success: false,
+        message: 'Blog no encontrado'
+      });
+    }
+    
+    // Verificar si el usuario es el autor o es admin
+    const connection = await mysqlPool.getConnection();
+    
     try {
-      // Verificar si hay imagen en la solicitud
-      if (!req.file) {
-        return res.status(400).json({
+      const [userRows] = await connection.query('SELECT role FROM users WHERE id = ?', [req.userId]);
+      const isAdmin = userRows.length > 0 && userRows[0].role === 'admin';
+      
+      if (blog.author_id !== parseInt(req.userId) && !isAdmin) {
+        return res.status(403).json({
           success: false,
-          message: 'No se ha proporcionado ninguna imagen'
+          message: 'No autorizado para actualizar este blog'
         });
       }
       
-      // El archivo está disponible en req.file gracias a multer
-      const imageFile = req.file;
+      // Actualizar solo el campo de imagen
+      await connection.query(
+        'UPDATE blogs SET image_url = ? WHERE id = ?',
+        [image_url, id]
+      );
       
-      // Subir la imagen a Azure Blob Storage o tu servicio de almacenamiento
-      const imageUrl = await azureStorageService.uploadImage(imageFile, `blog-${Date.now()}`);
+      connection.release();
       
       res.json({
         success: true,
-        data: {
-          imageUrl,
-          message: 'Imagen subida exitosamente'
-        }
+        message: 'Imagen del blog actualizada exitosamente'
       });
     } catch (error) {
-      console.error('Error en uploadBlogImage:', error);
-      res.status(500).json({
+      if (connection) connection.release();
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error al actualizar imagen del blog:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al actualizar la imagen del blog'
+    });
+  }
+});
+
+// Modificación de uploadBlogImage para devolver la URL en el formato correcto
+static uploadBlogImage = asyncErrorHandler(async (req, res) => {
+  try {
+    // Verificar si hay imagen en la solicitud
+    if (!req.file) {
+      return res.status(400).json({
         success: false,
-        message: 'Error al procesar la imagen: ' + (error.message || 'Error desconocido')
+        message: 'No se ha proporcionado ninguna imagen'
       });
     }
-  });
+    
+    // El archivo está disponible en req.file gracias a multer
+    const imageFile = req.file;
+    
+    // Subir la imagen a Azure Blob Storage o tu servicio de almacenamiento
+    const imageUrl = await azureStorageService.uploadImage(imageFile, `blog-${Date.now()}`);
+    
+    res.json({
+      success: true,
+      data: {
+        url: imageUrl,
+        message: 'Imagen subida exitosamente'
+      }
+    });
+  } catch (error) {
+    console.error('Error en uploadBlogImage:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al procesar la imagen: ' + (error.message || 'Error desconocido')
+    });
+  }
+});
 // Añadir al final de src/controllers/blog.controller.js
 static updateBlogStatus = asyncErrorHandler(async (req, res) => {
   const { id } = req.params;

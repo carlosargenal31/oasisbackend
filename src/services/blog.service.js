@@ -43,6 +43,7 @@ export class BlogService {
   }
 
   // Modificación en src/services/blog.service.js
+// Método getBlogs mejorado para manejar la visualización de blogs activos/inactivos
 static async getBlogs(filters = {}) {
   try {
     // Asegurarse de que limit y offset son números
@@ -53,10 +54,10 @@ static async getBlogs(filters = {}) {
       filters.offset = parseInt(filters.offset);
     }
     
-    // Obtener blogs con los filtros proporcionados
+    // Obtener blogs con los filtros proporcionados (incluyendo posiblemente active)
     const blogs = await Blog.findAll(filters);
     
-    // Obtener el total de blogs con los mismos filtros (sin paginación)
+    // Usar los mismos filtros para obtener el total
     const total = await Blog.count(filters);
     
     return {
@@ -70,7 +71,37 @@ static async getBlogs(filters = {}) {
     throw new DatabaseError('Error al obtener los blogs');
   }
 }
-
+// Método específico para obtener blogs para administradores (incluidos inactivos)
+static async getAdminBlogs(filters = {}) {
+  try {
+    // Asegurar que limit y offset son números
+    if (filters.limit) {
+      filters.limit = parseInt(filters.limit);
+    }
+    if (filters.offset) {
+      filters.offset = parseInt(filters.offset);
+    }
+    
+    // Para administradores, permitir filtrado específico de active si se proporciona
+    // Si no se proporciona, mostrar todos los blogs (activos e inactivos)
+    
+    // Obtener blogs sin filtro de active por defecto
+    const blogs = await Blog.findAll(filters);
+    
+    // Obtener total con los mismos filtros
+    const total = await Blog.count(filters);
+    
+    return {
+      blogs,
+      total,
+      page: filters.offset ? Math.floor(filters.offset / filters.limit) + 1 : 1,
+      limit: filters.limit ? filters.limit : blogs.length
+    };
+  } catch (error) {
+    console.error('Error getting admin blogs:', error);
+    throw new DatabaseError('Error al obtener los blogs para administración');
+  }
+}
 static async getFeaturedBlogs(limit = 2) {
   try {
     // Asegurarse de que limit es un número
