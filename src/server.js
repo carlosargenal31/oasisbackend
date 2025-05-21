@@ -41,6 +41,8 @@ import eventRoutes from './routes/event.routes.js';
 import adminRoutes from './routes/admin.routes.js'; // Importar las rutas de administrador
 import commentRoutes from './routes/comment.routes.js';
 
+import routeRoutes from './routes/route.routes.js';
+
 const app = express();
 dotenv.config();
 
@@ -137,6 +139,8 @@ app.use('/api/comments', commentRoutes);
 
 // Rutas de administrador (requieren autenticación y privilegios de admin)
 app.use('/api/admin', adminRoutes);
+
+app.use('/api/routes', routeRoutes);
 
 // Ruta para probar un usuario específico (solo para desarrollo)
 app.get('/api/dev/user/:id', async (req, res) => {
