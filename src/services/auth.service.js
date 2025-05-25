@@ -9,7 +9,7 @@ class AuthService {
   static async getUserById(userId) {
     try {
       const [users] = await mysqlPool.query(
-        `SELECT id, first_name, last_name, email, phone, status, profile_image, created_at, updated_at 
+        `SELECT id, first_name, last_name, email, phone, status, role, profile_image, created_at, updated_at 
          FROM users WHERE id = ?`,
         [userId]
       );
@@ -28,7 +28,7 @@ class AuthService {
     }
   }
 
-  async register(userData) {
+  static async register(userData) {
     try {
       // Validar email uniqueness
       const [existingUsers] = await mysqlPool.query(
@@ -105,35 +105,84 @@ class AuthService {
     }
   }
 
-  async login(email, password) {
+    static async updatePassword(token, newPassword) {
+      if ( !newPassword) {
+        throw new ValidationError('Nueva contraseña es requerida');
+      }
+  
+      if (newPassword.length < 8) {
+        throw new ValidationError('La nueva contraseña debe tener al menos 8 caracteres');
+      }
+  
+      const connection = await mysqlPool.getConnection();
+      try {
+        // Verificar si el usuario existe y obtener sus credenciales
+        const [user] = await connection.query(
+          'SELECT user_id FROM auth_credentials WHERE reset_token = ?',
+          [token]
+        );
+  
+        if (user.length === 0) {
+          throw new NotFoundError('Credenciales de usuario no encontradas');
+        }
+  
+        // Verificar contraseña actual
+        const isMatch = await bcrypt.compare(newPassword, user[0].password);
+        if (!isMatch) {
+          throw new ValidationError('La contraseña debe ser distinta a una vieja');
+        }
+  
+        // Hashear nueva contraseña
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+  
+        // Actualizar contraseña
+        await connection.query(
+          'UPDATE auth_credentials SET password = ? WHERE user_id = ?',
+          [hashedPassword, user[0].user_id]
+        );
+  
+        return true;
+      } catch (error) {
+        console.error('Error updating password:', error);
+        if (error instanceof ValidationError || 
+            error instanceof NotFoundError) {
+          throw error;
+        }
+        throw new DatabaseError('Error al actualizar la contraseña');
+      } finally {
+        connection.release();
+      }
+    }
+
+  static async login(email, password) {
     try {
       console.log(`Attempting login with: ${email}`);
       
-      // Find user by email
+      // Find user by email - incluir el rol en la consulta
       const [users] = await mysqlPool.query(
-        'SELECT * FROM users WHERE email = ?',
+        'SELECT id, first_name, last_name, email, phone, status, role, profile_image, created_at, updated_at FROM users WHERE email = ?',
         [email]
       );
-  
+
       if (users.length === 0) {
         console.log(`No user found with email: ${email}`);
         throw new AuthenticationError('Invalid email or password');
       }
-  
+
       const user = users[0];
-      console.log(`Found user with ID: ${user.id}`);
-  
+      console.log(`Found user with ID: ${user.id}, Role: ${user.role}`);
+
       // Fetch password from auth_credentials
       const [authCredentials] = await mysqlPool.query(
         'SELECT * FROM auth_credentials WHERE user_id = ?',
         [user.id]
       );
-  
+
       if (authCredentials.length === 0) {
         console.log(`No auth credentials found for user ID: ${user.id}`);
         throw new AuthenticationError('No authentication credentials found');
       }
-  
+
       // Verify password
       const isPasswordValid = await bcrypt.compare(password, authCredentials[0].password);
       console.log(`Password validation result: ${isPasswordValid}`);
@@ -144,8 +193,8 @@ class AuthService {
       }
       
       // Generate tokens
-      const accessToken = this.generateAccessToken(user);
-      const refreshToken = this.generateRefreshToken(user);
+      const accessToken = AuthService.generateAccessToken(user);
+      const refreshToken = AuthService.generateRefreshToken(user);
 
       // Store refresh token in database
       await mysqlPool.query(
@@ -173,7 +222,7 @@ class AuthService {
     }
   }
  
-  async logout(userId) {
+  static async logout(userId) {
     try {
       // Clear refresh token in database
       await mysqlPool.query(
@@ -188,7 +237,7 @@ class AuthService {
     }
   }
 
-  async refreshToken(refreshToken) {
+  static async refreshToken(refreshToken) {
     try {
       // Verify refresh token
       const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || '1234');
@@ -206,7 +255,7 @@ class AuthService {
       const user = users[0];
 
       // Generate new access token
-      const newAccessToken = this.generateAccessToken(user);
+      const newAccessToken = AuthService.generateAccessToken(user);
       
       return {
         accessToken: newAccessToken
@@ -217,7 +266,7 @@ class AuthService {
     }
   }
 
-  async requestPasswordReset(email) {
+  static async requestPasswordReset(email) {
     try {
       // Find user by email
       const [users] = await mysqlPool.query(
@@ -252,14 +301,17 @@ class AuthService {
     }
   }
 
-  async resetPassword(token, newPassword) {
+  static async resetPassword(token, newPassword) {
     try {
       // Find user with the given reset token
       const [credentials] = await mysqlPool.query(
-        'SELECT * FROM auth_credentials WHERE reset_token = ? AND reset_token_expires > ?',
-        [token, new Date()]
+        'SELECT * FROM auth_credentials WHERE reset_token = ?',
+        [token]
       );
-
+      console.log('antes antes')
+      console.log(newPassword)
+      console.log('despues despues')
+      console.log(credentials)
       if (credentials.length === 0) {
         throw new ValidationError('Invalid or expired reset token');
       }
@@ -268,10 +320,11 @@ class AuthService {
 
       // Hash new password
       const hashedPassword = await bcrypt.hash(newPassword, 10);
+      console.log(hashedPassword)
 
       // Update user password and clear reset token
       await mysqlPool.query(
-        'UPDATE auth_credentials SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
+        'UPDATE auth_credentials SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ? AND reset_token_expires > NOW()',
         [hashedPassword, credential.id]
       );
       
@@ -287,9 +340,9 @@ class AuthService {
     }
   }
 
-  async changePassword(userId, currentPassword, newPassword) {
+  static async changePassword(userId, currentPassword, newPassword) {
     try {
-      // Find credentials by user ID
+      
       const [credentials] = await mysqlPool.query(
         'SELECT * FROM auth_credentials WHERE user_id = ?',
         [userId]
@@ -329,11 +382,12 @@ class AuthService {
     }
   }
 
-  generateAccessToken(user) {
+  static generateAccessToken(user) {
     return jwt.sign(
       {
         id: user.id,
-        email: user.email
+        email: user.email,
+        role: user.role // Añadir el rol al token
       },
       process.env.JWT_SECRET || '1234',
       {
@@ -342,7 +396,7 @@ class AuthService {
     );
   }
 
-  generateRefreshToken(user) {
+  static generateRefreshToken(user) {
     return jwt.sign(
       {
         id: user.id
@@ -354,7 +408,7 @@ class AuthService {
     );
   }
 
-  validateToken(token) {
+  static validateToken(token) {
     try {
       return jwt.verify(token, process.env.JWT_SECRET || '1234');
     } catch (error) {
@@ -363,7 +417,5 @@ class AuthService {
   }
 }
 
-// Create a singleton instance
-const authService = new AuthService();
-
-export default authService;
+// No necesitamos crear una instancia ya que todos los métodos son estáticos
+export default AuthService;

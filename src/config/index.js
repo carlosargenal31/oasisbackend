@@ -13,7 +13,9 @@ export default {
   apiPrefix: process.env.API_PREFIX || '/api',
   
   // Client application URL
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:8080',
+  clientUrl: process.env.CLIENT_URL,
+  emailAcount: process.env.EMAIL,
+  emailPass: process.env.EMAIL_PASS,
   
   // Authentication configurations
   auth: {
