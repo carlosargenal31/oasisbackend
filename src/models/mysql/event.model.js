@@ -224,29 +224,7 @@ static async getFeatured(limit = 3) {
   }
 }
 
-static async getHomeEvents(limit = 6) {
-  try {
-    const connection = await mysqlPool.getConnection();
-    
-    // Convertir limit a número para evitar el error de sintaxis SQL
-    const limitValue = parseInt(limit);
-    
-    const [events] = await connection.query(`
-      SELECT e.*, u.first_name, u.last_name, u.profile_image 
-      FROM events e
-      JOIN users u ON e.created_by = u.id
-      WHERE e.is_home = 1 AND e.event_date >= CURDATE() AND e.status = 'activo'
-      ORDER BY e.event_date ASC
-      LIMIT ?
-    `, [limitValue]);
-    
-    connection.release();
-    return events;
-  } catch (error) {
-    console.error('Error finding home events:', error);
-    throw error;
-  }
-}
+
   
   // Obtener tipos de evento
   static async getEventTypes() {
@@ -492,23 +470,6 @@ static async update(id, eventData) {
     }
   }
   
-  // Actualizar el estado de visibilidad en inicio
-  static async updateHomeStatus(id, isHome) {
-    try {
-      const connection = await mysqlPool.getConnection();
-      
-      const [result] = await connection.query(
-        'UPDATE events SET is_home = ? WHERE id = ?',
-        [isHome ? 1 : 0, id]
-      );
-      
-      connection.release();
-      return result.affectedRows > 0;
-    } catch (error) {
-      console.error('Error updating home status:', error);
-      throw error;
-    }
-  }
   
   // Actualizar el estado del evento
   static async updateStatus(id, status) {

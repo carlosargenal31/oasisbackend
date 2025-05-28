@@ -53,7 +53,7 @@ export class EventService {
   }
 }
 
-// En event.service.js - método updateEvent
+// 2. CORRECCIÓN EN event.service.js - Método updateEvent
 static async updateEvent(id, eventData, userId) {
   if (!id) {
     throw new ValidationError('ID de evento es requerido');
@@ -70,8 +70,16 @@ static async updateEvent(id, eventData, userId) {
       throw new NotFoundError('Evento no encontrado');
     }
     
-    // Verificar autorización - solo el creador puede actualizar
-    if (event.created_by !== parseInt(userId)) {
+    // CORRECCIÓN: Verificar si es admin
+    const userConnection = await mysqlPool.getConnection();
+    const [users] = await userConnection.query('SELECT role FROM users WHERE id = ?', [userId]);
+    userConnection.release();
+    
+    const isAdmin = users.length > 0 && users[0].role === 'admin';
+    const isOwner = event.created_by === parseInt(userId);
+    
+    // Verificar autorización - admin puede modificar cualquier evento, o debe ser el creador
+    if (!isAdmin && !isOwner) {
       throw new AuthorizationError('No autorizado para actualizar este evento');
     }
 
@@ -173,20 +181,7 @@ static async updateEvent(id, eventData, userId) {
     }
   }
 
-  static async getHomeEvents(limit = 6) {
-    try {
-      // Asegurarse de que limit es un número
-      const limitValue = parseInt(limit);
-      
-      // Obtener eventos para la página de inicio
-      const events = await Event.getHomeEvents(limitValue);
-      
-      return events;
-    } catch (error) {
-      console.error('Error getting home events:', error);
-      throw new DatabaseError('Error al obtener los eventos para la página de inicio');
-    }
-  }
+  
 
   static async getEventById(id, isAdmin = false) {
     if (!id) {
@@ -216,39 +211,87 @@ static async updateEvent(id, eventData, userId) {
   }
 
   
-  static async deleteEvent(id, userId) {
-    if (!id) {
-      throw new ValidationError('ID de evento es requerido');
+  // 4. CORRECCIÓN EN event.service.js - Método deleteEvent
+static async deleteEvent(id, userId) {
+  if (!id) {
+    throw new ValidationError('ID de evento es requerido');
+  }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    // Verificar si el evento existe
+    const event = await Event.findById(id);
+    
+    if (!event) {
+      throw new NotFoundError('Evento no encontrado');
+    }
+    
+    // CORRECCIÓN: Verificar si es admin
+    const userConnection = await mysqlPool.getConnection();
+    const [users] = await userConnection.query('SELECT role FROM users WHERE id = ?', [userId]);
+    userConnection.release();
+    
+    const isAdmin = users.length > 0 && users[0].role === 'admin';
+    const isOwner = event.created_by === parseInt(userId);
+    
+    // Verificar autorización - admin puede eliminar cualquier evento, o debe ser el creador
+    if (!isAdmin && !isOwner) {
+      throw new AuthorizationError('No autorizado para eliminar este evento');
     }
 
-    const connection = await mysqlPool.getConnection();
+    // Eliminar evento
+    const deleted = await Event.delete(id);
+    
+    return deleted;
+  } catch (error) {
+    console.error('Error deleting event:', error);
+    if (error instanceof ValidationError || 
+        error instanceof NotFoundError ||
+        error instanceof AuthorizationError) {
+      throw error;
+    }
+    throw new DatabaseError('Error al eliminar el evento');
+  } finally {
+    connection.release();
+  }
+}
+
+// Función auxiliar para verificar permisos
+  static async checkEventPermissions(eventId, userId) {
     try {
       // Verificar si el evento existe
-      const event = await Event.findById(id);
+      const event = await Event.findById(eventId);
       
       if (!event) {
         throw new NotFoundError('Evento no encontrado');
       }
       
-      // Verificar autorización - solo el creador puede eliminar
-      if (event.created_by !== parseInt(userId)) {
-        throw new AuthorizationError('No autorizado para eliminar este evento');
-      }
-
-      // Eliminar evento
-      const deleted = await Event.delete(id);
-      
-      return deleted;
-    } catch (error) {
-      console.error('Error deleting event:', error);
-      if (error instanceof ValidationError || 
-          error instanceof NotFoundError ||
-          error instanceof AuthorizationError) {
-        throw error;
-      }
-      throw new DatabaseError('Error al eliminar el evento');
-    } finally {
+      // Obtener información del usuario
+      const connection = await mysqlPool.getConnection();
+      const [users] = await connection.query('SELECT role FROM users WHERE id = ?', [userId]);
       connection.release();
+      
+      const isAdmin = users.length > 0 && users[0].role === 'admin';
+      const isOwner = event.created_by === parseInt(userId);
+      
+      console.log('Verificación de permisos:', { 
+        eventId,
+        userId,
+        isAdmin, 
+        isOwner, 
+        userRole: users[0]?.role,
+        event_created_by: event.created_by
+      });
+      
+      return {
+        event,
+        isAdmin,
+        isOwner,
+        hasPermission: isAdmin || isOwner
+      };
+    } catch (error) {
+      console.error('Error verificando permisos:', error);
+      throw error;
     }
   }
   
@@ -284,24 +327,20 @@ static async updateEvent(id, eventData, userId) {
 
     const connection = await mysqlPool.getConnection();
     try {
-      // Verificar si el evento existe
-      const event = await Event.findById(id);
+      // Usar la función auxiliar
+      const { event, hasPermission } = await this.checkEventPermissions(id, userId);
       
-      if (!event) {
-        throw new NotFoundError('Evento no encontrado');
-      }
-      
-      // Verificar autorización - solo el creador puede cambiar el estado destacado
-      if (event.created_by !== parseInt(userId)) {
+      if (!hasPermission) {
         throw new AuthorizationError('No autorizado para actualizar este evento');
       }
 
       // Actualizar estado destacado
       const updated = await Event.updateFeaturedStatus(id, isFeatured);
       
+      console.log(`Evento ${id} estado destacado actualizado:`, updated);
       return updated;
     } catch (error) {
-      console.error('Error updating featured status:', error);
+      console.error('Error en updateFeaturedStatus service:', error);
       if (error instanceof ValidationError || 
           error instanceof NotFoundError || 
           error instanceof AuthorizationError) {
@@ -313,81 +352,55 @@ static async updateEvent(id, eventData, userId) {
     }
   }
   
-  static async updateHomeStatus(id, isHome, userId) {
-    if (!id) {
-      throw new ValidationError('ID de evento es requerido');
-    }
-
-    const connection = await mysqlPool.getConnection();
-    try {
-      // Verificar si el evento existe
-      const event = await Event.findById(id);
-      
-      if (!event) {
-        throw new NotFoundError('Evento no encontrado');
-      }
-      
-      // Verificar autorización - solo el creador puede cambiar el estado de inicio
-      if (event.created_by !== parseInt(userId)) {
-        throw new AuthorizationError('No autorizado para actualizar este evento');
-      }
-
-      // Actualizar estado de inicio
-      const updated = await Event.updateHomeStatus(id, isHome);
-      
-      return updated;
-    } catch (error) {
-      console.error('Error updating home status:', error);
-      if (error instanceof ValidationError || 
-          error instanceof NotFoundError || 
-          error instanceof AuthorizationError) {
-        throw error;
-      }
-      throw new DatabaseError('Error al actualizar el estado de inicio del evento');
-    } finally {
-      connection.release();
-    }
+  
+  // 3. CORRECCIÓN EN event.service.js - Método updateEventStatus
+static async updateEventStatus(id, status, userId) {
+  if (!id) {
+    throw new ValidationError('ID de evento es requerido');
   }
   
-  static async updateEventStatus(id, status, userId) {
-    if (!id) {
-      throw new ValidationError('ID de evento es requerido');
+  if (!status || !['activo', 'cancelado', 'pospuesto', 'completado'].includes(status)) {
+    throw new ValidationError('Estado de evento inválido');
+  }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    // Verificar si el evento existe
+    const event = await Event.findById(id);
+    
+    if (!event) {
+      throw new NotFoundError('Evento no encontrado');
     }
     
-    if (!status || !['activo', 'cancelado', 'pospuesto', 'completado'].includes(status)) {
-      throw new ValidationError('Estado de evento inválido');
+    // CORRECCIÓN: Verificar si es admin
+    const userConnection = await mysqlPool.getConnection();
+    const [users] = await userConnection.query('SELECT role FROM users WHERE id = ?', [userId]);
+    userConnection.release();
+    
+    const isAdmin = users.length > 0 && users[0].role === 'admin';
+    const isOwner = event.created_by === parseInt(userId);
+    
+    // Verificar autorización - admin puede modificar cualquier evento, o debe ser el creador
+    if (!isAdmin && !isOwner) {
+      throw new AuthorizationError('No autorizado para actualizar este evento');
     }
 
-    const connection = await mysqlPool.getConnection();
-    try {
-      // Verificar si el evento existe
-      const event = await Event.findById(id);
-      
-      if (!event) {
-        throw new NotFoundError('Evento no encontrado');
-      }
-      
-      // Verificar autorización - solo el creador puede cambiar el estado
-      if (event.created_by !== parseInt(userId)) {
-        throw new AuthorizationError('No autorizado para actualizar este evento');
-      }
-
-      // Actualizar estado
-      const updated = await Event.updateStatus(id, status);
-      
-      return updated;
-    } catch (error) {
-      console.error('Error updating event status:', error);
-      if (error instanceof ValidationError || 
-          error instanceof NotFoundError || 
-          error instanceof AuthorizationError) {
-        throw error;
-      }
-      throw new DatabaseError('Error al actualizar el estado del evento');
-    } finally {
-      connection.release();
+    // Actualizar estado
+    const updated = await Event.updateStatus(id, status);
+    
+    return updated;
+  } catch (error) {
+    console.error('Error updating event status:', error);
+    if (error instanceof ValidationError || 
+        error instanceof NotFoundError || 
+        error instanceof AuthorizationError) {
+      throw error;
     }
+    throw new DatabaseError('Error al actualizar el estado del evento');
+  } finally {
+    connection.release();
   }
+}
   
   static async getUpcomingEvents(limit = 6) {
     try {

@@ -222,7 +222,6 @@ export class EventController {
 
   static updateFeaturedStatus = asyncErrorHandler(async (req, res) => {
   const { id } = req.params;
-  // Cambiado de 'featured' a 'is_featured' para coincidir con lo que envía el frontend
   const { is_featured } = req.body;
   
   if (is_featured === undefined) {
@@ -232,11 +231,12 @@ export class EventController {
     });
   }
   
-  await BlogService.updateFeaturedStatus(id, is_featured, req.userId);
+  // CORRECCIÓN: Usar EventService en lugar de BlogService
+  await EventService.updateFeaturedStatus(id, is_featured, req.userId);
   
   res.json({
     success: true,
-    message: `Blog ${is_featured ? 'marcado como destacado' : 'desmarcado como destacado'} exitosamente`
+    message: `Evento ${is_featured ? 'marcado como destacado' : 'desmarcado como destacado'} exitosamente`
   });
 });
   

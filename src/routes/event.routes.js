@@ -89,7 +89,7 @@ router.post('/', authenticate, validateEventData, EventController.createEvent);
 router.put('/:id', authenticate, validateEventData, EventController.updateEvent);
 router.delete('/:id', authenticate, EventController.deleteEvent);
 router.patch('/:id/featured', authenticate, EventController.updateFeaturedStatus);
-router.patch('/:id/home', authenticate, EventController.updateHomeStatus);
+
 router.patch('/:id/status', authenticate, EventController.updateEventStatus);
 
 export default router;
