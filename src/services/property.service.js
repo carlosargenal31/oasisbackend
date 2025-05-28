@@ -465,7 +465,428 @@ static async updateProperty(id, propertyData, imageFile, additionalImageFiles = 
     connection.release();
   }
 }
+// Método específico para obtener solo propiedades ACTIVAS (para usuarios públicos)
+static async getActiveProperties(filters = {}) {
+  try {
+    console.log("Filtros recibidos en getActiveProperties:", filters);
+    
+    // Configuración de paginación
+    const page = parseInt(filters.page) || 1;
+    const limit = parseInt(filters.limit) || 10;
+    const offset = (page - 1) * limit;
+    
+    // Eliminar filtros de price si existen
+    const adjustedFilters = {...filters};
+    if (adjustedFilters.minPrice) delete adjustedFilters.minPrice;
+    if (adjustedFilters.maxPrice) delete adjustedFilters.maxPrice;
+    
+    // Usar el método del modelo para obtener SOLO propiedades activas
+    const { properties, total } = await Property.findAllActive(adjustedFilters, { limit, offset });
+    
+    // Añadir información de host y otras mejoras a cada propiedad
+    const connection = await mysqlPool.getConnection();
+    const enhancedProperties = await Promise.all(properties.map(async property => {
+      // Añadir información básica del host si existe
+      if (property.host_id) {
+        try {
+          const [hostData] = await connection.query(
+            `SELECT first_name, last_name, profile_image, short_bio 
+             FROM users 
+             WHERE id = ?`,
+            [property.host_id]
+          );
+          
+          if (hostData && hostData.length > 0) {
+            property.host_first_name = hostData[0].first_name;
+            property.host_last_name = hostData[0].last_name;
+            property.host_profile_image = hostData[0].profile_image;
+            property.host_bio = hostData[0].short_bio;
+            property.host_name = `${hostData[0].first_name || ''} ${hostData[0].last_name || ''}`.trim() || 'Anfitrión';
+          }
+        } catch (error) {
+          console.error(`Error al obtener datos del host para propiedad ${property.id}:`, error);
+        }
+      }
+      
+      // Obtener calificación promedio del anfitrión
+      try {
+        const [hostRating] = await connection.query(
+          `SELECT AVG(r.rating) as host_average_rating
+           FROM reviews r
+           JOIN properties p ON r.property_id = p.id
+           WHERE p.host_id = ?`,
+          [property.host_id]
+        );
+        
+        if (hostRating && hostRating.length > 0) {
+          property.host_average_rating = hostRating[0].host_average_rating || 0;
+        }
+      } catch (error) {
+        console.error(`Error al obtener calificación del anfitrión ${property.host_id}:`, error);
+        property.host_average_rating = 0;
+      }
+      
+      // Obtener conteo de reseñas del anfitrión
+      try {
+        const [hostReviews] = await connection.query(
+          `SELECT COUNT(*) as host_review_count
+           FROM reviews r
+           JOIN properties p ON r.property_id = p.id
+           WHERE p.host_id = ?`,
+          [property.host_id]
+        );
+        
+        if (hostReviews && hostReviews.length > 0) {
+          property.host_review_count = hostReviews[0].host_review_count || 0;
+        }
+      } catch (error) {
+        console.error(`Error al obtener conteo de reseñas del anfitrión ${property.host_id}:`, error);
+        property.host_review_count = 0;
+      }
+      
+      return property;
+    }));
+    
+    connection.release();
+    
+    return {
+      properties: enhancedProperties,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    };
+  } catch (error) {
+    console.error('Error en getActiveProperties:', error);
+    throw error;
+  }
+}
 
+// Método específico para búsqueda en propiedades ACTIVAS solamente
+static async searchActiveProperties(searchTerm, searchFields = null, params = {}) {
+  if (!searchTerm || typeof searchTerm !== 'string' || searchTerm.trim() === '') {
+    throw new ValidationError('Término de búsqueda es requerido');
+  }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    const searchPattern = `%${searchTerm.trim()}%`;
+    
+    // Construir la condición WHERE básica - SOLO propiedades activas
+    let whereCondition = '(p.archived IS NULL OR p.archived = FALSE)';
+    const whereParams = [];
+    
+    // Condición de búsqueda de texto
+    const defaultSearchFields = ['p.title', 'p.description', 'p.address', 'p.category', 'p.property_type'];
+    
+    // Si se especifican campos de búsqueda, usarlos; de lo contrario, usar los predeterminados
+    const fieldsToSearch = searchFields && searchFields.length > 0 
+      ? searchFields.map(field => `p.${field}`) 
+      : defaultSearchFields;
+    
+    // Agregar condición de búsqueda por texto
+    whereCondition += ' AND (';
+    whereCondition += fieldsToSearch.map(field => `${field} LIKE ?`).join(' OR ');
+    whereCondition += ')';
+    
+    // Agregar parámetros para la búsqueda de texto
+    whereParams.push(...Array(fieldsToSearch.length).fill(searchPattern));
+    
+    // Filtros adicionales
+    
+    // Filtro de categoría
+    if (params.category) {
+      whereCondition += ' AND p.category = ?';
+      whereParams.push(params.category);
+    }
+    
+    // Filtro de tipo de propiedad
+    if (params.property_type) {
+      if (Array.isArray(params.property_type)) {
+        // Si es un array de tipos, usar IN
+        whereCondition += ` AND p.property_type IN (${params.property_type.map(() => '?').join(',')})`;
+        whereParams.push(...params.property_type);
+      } else {
+        // Si es un solo tipo, usar igualdad
+        whereCondition += ' AND p.property_type = ?';
+        whereParams.push(params.property_type);
+      }
+    }
+    
+    // Filtro de ciudad (si existe)
+    if (params.city) {
+      whereCondition += ' AND p.address LIKE ?';
+      whereParams.push(`%${params.city}%`);
+    }
+    
+    // Filtros de amenidades
+    if (params.amenities && Array.isArray(params.amenities) && params.amenities.length > 0) {
+      whereCondition += ` AND EXISTS (
+        SELECT 1 FROM property_amenities pa2 
+        WHERE pa2.property_id = p.id 
+        AND pa2.amenity IN (${params.amenities.map(() => '?').join(',')})
+        GROUP BY pa2.property_id
+        HAVING COUNT(DISTINCT pa2.amenity) = ?
+      )`;
+      whereParams.push(...params.amenities, params.amenities.length);
+    }
+    
+    // Construir la ordenación CASE para priorizar coincidencias
+    let orderByCase = 'CASE ';
+    fieldsToSearch.forEach((field, index) => {
+      orderByCase += `WHEN ${field} LIKE ? THEN ${index + 1} `;
+    });
+    orderByCase += 'ELSE 99 END';
+    
+    // Parámetros para la ordenación CASE (uno por cada campo de búsqueda)
+    const orderParams = Array(fieldsToSearch.length).fill(searchPattern);
+    
+    // Determinar la ordenación secundaria según el parámetro sort
+    let secondaryOrderBy = '';
+    switch (params.sort) {
+      case 'views-high':
+        secondaryOrderBy = 'p.views DESC';
+        break;
+      case 'views-low':
+        secondaryOrderBy = 'p.views ASC';
+        break;
+      case 'title-asc':
+        secondaryOrderBy = 'p.title ASC';
+        break;
+      case 'title-desc':
+        secondaryOrderBy = 'p.title DESC';
+        break;
+      case 'rating-high':
+        secondaryOrderBy = 'COALESCE(p.average_rating, 0) DESC';
+        break;
+      case 'rating-low':
+        secondaryOrderBy = 'COALESCE(p.average_rating, 0) ASC';
+        break;
+      case 'newest':
+      default:
+        secondaryOrderBy = 'CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
+    }
+    
+    // Construir la consulta completa
+    let query = `
+      SELECT p.*, 
+             GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
+             GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
+      FROM properties p
+      LEFT JOIN property_amenities pa ON p.id = pa.property_id
+      LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+      WHERE ${whereCondition}
+      GROUP BY p.id
+      ORDER BY ${orderByCase}, ${secondaryOrderBy}
+    `;
+    
+    // Paginación
+    const page = parseInt(params.page) || 1;
+    const limit = parseInt(params.limit) || 10;
+    const offset = (page - 1) * limit;
+    
+    // Agregar paginación a la consulta
+    query += ' LIMIT ? OFFSET ?';
+    
+    console.log('SQL Query (searchActive):', query);
+    console.log('Query params:', [...whereParams, ...orderParams, limit, offset]);
+    
+    // Ejecutar la consulta con todos los parámetros
+    const [properties] = await connection.query(
+      query,
+      [...whereParams, ...orderParams, limit, offset]
+    );
+
+    // Consulta para contar el total de resultados sin paginación - SOLO activos
+    let countQuery = `
+      SELECT COUNT(DISTINCT p.id) as total 
+      FROM properties p
+      WHERE ${whereCondition}
+    `;
+    
+    const [countResult] = await connection.query(countQuery, whereParams);
+    const totalCount = countResult[0]?.total || 0;
+    
+    connection.release();
+    
+    // Procesar y devolver resultados
+    const processedProperties = properties.map(property => ({
+      ...property,
+      amenities: property.amenities ? property.amenities.split(',') : [],
+      pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : []
+    }));
+    
+    return {
+      properties: processedProperties,
+      total: totalCount,
+      page,
+      limit,
+      totalPages: Math.ceil(totalCount / limit)
+    };
+  } catch (error) {
+    console.error('Error en searchActiveProperties:', error);
+    throw error;
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Método para obtener propiedades activas por categorías principales
+static async getActivePropertiesByMainCategories(category = null, filters = {}) {
+  try {
+    const apiFilters = {
+      ...filters
+    };
+    
+    // Si se proporciona una categoría específica, filtrar por ella
+    if (category) {
+      apiFilters.category = category;
+    } else {
+      // Si no se proporciona categoría, filtramos por las tres principales
+      apiFilters.categoryList = ['Restaurante y bar', 'Alojamiento', 'Entretenimiento'];
+    }
+    
+    // Calcular offset para paginación
+    const limit = parseInt(filters.limit || 10);
+    const page = parseInt(filters.page || 1);
+    const offset = (page - 1) * limit;
+    
+    const connection = await mysqlPool.getConnection();
+    
+    let query = `
+      SELECT p.*, 
+             GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
+             GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
+      FROM properties p
+      LEFT JOIN property_amenities pa ON p.id = pa.property_id
+      LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+      WHERE (p.archived IS NULL OR p.archived = FALSE)
+    `;
+    
+    const queryParams = [];
+    
+    // Aplicar filtro de categoría
+    if (category) {
+      query += ' AND p.category = ?';
+      queryParams.push(category);
+    } else if (apiFilters.categoryList) {
+      query += ` AND p.category IN (${apiFilters.categoryList.map(() => '?').join(',')})`;
+      queryParams.push(...apiFilters.categoryList);
+    }
+    
+    // IMPORTANTE: Añadir filtro de property_type si existe
+    if (apiFilters.property_type) {
+      if (Array.isArray(apiFilters.property_type)) {
+        // Si es un array de tipos, usar IN
+        if (apiFilters.property_type.length > 0) {
+          query += ` AND p.property_type IN (${apiFilters.property_type.map(() => '?').join(',')})`;
+          queryParams.push(...apiFilters.property_type);
+        }
+      } else {
+        // Si es un solo tipo, usar igualdad
+        query += ' AND p.property_type = ?';
+        queryParams.push(apiFilters.property_type);
+      }
+      
+      console.log(`SQL: Filtro de tipo aplicado: ${JSON.stringify(apiFilters.property_type)}`);
+    }
+    
+    // Agrupar y ordenar
+    query += ' GROUP BY p.id';
+    
+    // Aplicar ordenación según el parámetro sort
+    if (apiFilters.sort) {
+      switch (apiFilters.sort) {
+        case 'views-high':
+          query += ' ORDER BY p.views DESC';
+          break;
+        case 'views-low':
+          query += ' ORDER BY p.views ASC';
+          break;
+        case 'title-asc':
+          query += ' ORDER BY p.title ASC';
+          break;
+        case 'title-desc':
+          query += ' ORDER BY p.title DESC';
+          break;
+        case 'rating-high':
+          query += ' ORDER BY COALESCE(p.average_rating, 0) DESC';
+          break;
+        case 'rating-low':
+          query += ' ORDER BY COALESCE(p.average_rating, 0) ASC';
+          break;
+        case 'newest':
+        default:
+          query += ' ORDER BY CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
+      }
+    } else {
+      query += ' ORDER BY CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
+    }
+    
+    // Aplicar paginación
+    query += ' LIMIT ? OFFSET ?';
+    queryParams.push(limit, offset);
+    
+    // Ejecutar consulta
+    console.log('SQL Query (Active):', query);
+    console.log('SQL Params (Active):', queryParams);
+    
+    const [properties] = await connection.query(query, queryParams);
+    
+    // Consulta para obtener el total sin paginación - SOLO activos
+    let countQuery = `
+      SELECT COUNT(DISTINCT p.id) as total 
+      FROM properties p
+      WHERE (p.archived IS NULL OR p.archived = FALSE)
+    `;
+    
+    const countParams = [];
+    
+    if (category) {
+      countQuery += ' AND p.category = ?';
+      countParams.push(category);
+    } else if (apiFilters.categoryList) {
+      countQuery += ` AND p.category IN (${apiFilters.categoryList.map(() => '?').join(',')})`;
+      countParams.push(...apiFilters.categoryList);
+    }
+    
+    // Añadir mismo filtro de property_type a la consulta de conteo
+    if (apiFilters.property_type) {
+      if (Array.isArray(apiFilters.property_type)) {
+        if (apiFilters.property_type.length > 0) {
+          countQuery += ` AND p.property_type IN (${apiFilters.property_type.map(() => '?').join(',')})`;
+          countParams.push(...apiFilters.property_type);
+        }
+      } else {
+        countQuery += ' AND p.property_type = ?';
+        countParams.push(apiFilters.property_type);
+      }
+    }
+    
+    const [countResult] = await connection.query(countQuery, countParams);
+    const total = countResult[0]?.total || 0;
+    
+    connection.release();
+    
+    // Procesar propiedades
+    const processedProperties = properties.map(property => ({
+      ...property,
+      amenities: property.amenities ? property.amenities.split(',') : [],
+      pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : []
+    }));
+    
+    return {
+      properties: processedProperties,
+      total,
+      page: parseInt(filters.page || 1),
+      limit,
+      totalPages: Math.ceil(total / limit)
+    };
+  } catch (error) {
+    console.error('Error al obtener propiedades activas por categorías principales:', error);
+    throw error;
+  }
+}
 // Función restoreProperty modificada
 static async archiveProperty(id, archiveData = {}, userId) {
   if (!id) {

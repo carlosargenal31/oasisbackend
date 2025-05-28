@@ -168,6 +168,242 @@ export class Property {
       throw error;
     }
   }
+  static async findAllActive(filters = {}, pagination = {}) {
+  try {
+    const connection = await mysqlPool.getConnection();
+    
+    // MÉTODO ESPECÍFICO PARA USUARIOS PÚBLICOS:
+    // Solo mostrar comercios ACTIVOS (no archivados)
+    
+    let query = `
+      SELECT p.*, 
+             GROUP_CONCAT(DISTINCT pa.amenity) as amenities,
+             GROUP_CONCAT(DISTINCT ppa.pet_type) as pets_allowed
+      FROM properties p
+      LEFT JOIN property_amenities pa ON p.id = pa.property_id
+      LEFT JOIN property_pets_allowed ppa ON p.id = ppa.property_id
+      WHERE (p.archived IS NULL OR p.archived = FALSE)
+    `;
+    
+    const queryParams = [];
+    
+    // Filtros específicos
+    if (filters.status) {
+      query += ' AND p.status = ?';
+      queryParams.push(filters.status);
+    }
+    
+    // Filtro por categoría
+    if (filters.category) {
+      query += ' AND p.category = ?';
+      queryParams.push(filters.category);
+    }
+    
+    // Filtro por tipo de propiedad
+    if (filters.property_type) {
+      if (Array.isArray(filters.property_type)) {
+        if (filters.property_type.length > 0) {
+          query += ` AND p.property_type IN (${filters.property_type.map(() => '?').join(',')})`;
+          queryParams.push(...filters.property_type);
+        }
+      } else {
+        query += ' AND p.property_type = ?';
+        queryParams.push(filters.property_type);
+      }
+    }
+    
+    // Filtro por lista de categorías (para categorías principales)
+    if (filters.categoryList && Array.isArray(filters.categoryList) && filters.categoryList.length > 0) {
+      query += ` AND p.category IN (${filters.categoryList.map(() => '?').join(',')})`;
+      queryParams.push(...filters.categoryList);
+    }
+    
+    // Filtro por ciudad/dirección
+    if (filters.city) {
+      query += ' AND p.address LIKE ?';
+      queryParams.push(`%${filters.city}%`);
+    }
+    
+    // Filtro por amenidades
+    if (filters.amenities && Array.isArray(filters.amenities) && filters.amenities.length > 0) {
+      query += ` AND EXISTS (
+        SELECT 1 FROM property_amenities pa2 
+        WHERE pa2.property_id = p.id 
+        AND pa2.amenity IN (${filters.amenities.map(() => '?').join(',')})
+        GROUP BY pa2.property_id
+        HAVING COUNT(DISTINCT pa2.amenity) = ?
+      )`;
+      queryParams.push(...filters.amenities, filters.amenities.length);
+    }
+    
+    // Filtro por host_id
+    if (filters.host_id) {
+      query += ' AND p.host_id = ?';
+      queryParams.push(filters.host_id);
+    }
+    
+    // Filtro por destacado
+    if (filters.featured === true) {
+      query += ' AND p.isFeatured = 1';
+    }
+    
+    // Filtro por verificado
+    if (filters.verified === true) {
+      query += ' AND p.isVerified = 1';
+    }
+    
+    // Agrupar por ID de propiedad para evitar duplicados por los JOIN
+    query += ' GROUP BY p.id';
+    
+    // Aplicar ordenación según el parámetro sort
+    if (filters.sort) {
+      switch (filters.sort) {
+        case 'id-asc':
+          query += ' ORDER BY p.id ASC';
+          break;
+        case 'newest':
+          query += ' ORDER BY p.created_at DESC';
+          break;
+        case 'views-high':
+          query += ' ORDER BY p.views DESC';
+          break;
+        case 'views-low':
+          query += ' ORDER BY p.views ASC';
+          break;
+        case 'title-asc':
+          query += ' ORDER BY p.title ASC';
+          break;
+        case 'title-desc':
+          query += ' ORDER BY p.title DESC';
+          break;
+        case 'rating-high':
+          query += ' ORDER BY COALESCE(p.average_rating, 0) DESC';
+          break;
+        case 'rating-low':
+          query += ' ORDER BY COALESCE(p.average_rating, 0) ASC';
+          break;
+        default:
+          query += ' ORDER BY CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
+      }
+    } else {
+      // Ordenación por defecto: destacados primero, luego más recientes
+      query += ' ORDER BY CASE WHEN p.isFeatured = 1 THEN 1 ELSE 0 END DESC, p.created_at DESC';
+    }
+    
+    // Paginación
+    if (pagination.limit) {
+      query += ' LIMIT ?';
+      queryParams.push(parseInt(pagination.limit));
+      
+      if (pagination.offset) {
+        query += ' OFFSET ?';
+        queryParams.push(parseInt(pagination.offset));
+      }
+    }
+    
+    console.log("QUERY SQL (findAllActive):", query);
+    console.log("PARAMS (findAllActive):", queryParams);
+    
+    // Ejecutar consulta
+    const [properties] = await connection.query(query, queryParams);
+    
+    // Consulta de conteo solo para propiedades activas
+    let countQuery = `
+      SELECT COUNT(DISTINCT p.id) as total 
+      FROM properties p
+      WHERE (p.archived IS NULL OR p.archived = FALSE)
+    `;
+    
+    const countQueryParams = [];
+    
+    // Aplicar los mismos filtros a la consulta de conteo
+    if (filters.status) {
+      countQuery += ' AND p.status = ?';
+      countQueryParams.push(filters.status);
+    }
+    
+    if (filters.category) {
+      countQuery += ' AND p.category = ?';
+      countQueryParams.push(filters.category);
+    }
+    
+    if (filters.property_type) {
+      if (Array.isArray(filters.property_type)) {
+        if (filters.property_type.length > 0) {
+          countQuery += ` AND p.property_type IN (${filters.property_type.map(() => '?').join(',')})`;
+          countQueryParams.push(...filters.property_type);
+        }
+      } else {
+        countQuery += ' AND p.property_type = ?';
+        countQueryParams.push(filters.property_type);
+      }
+    }
+    
+    if (filters.categoryList && Array.isArray(filters.categoryList) && filters.categoryList.length > 0) {
+      countQuery += ` AND p.category IN (${filters.categoryList.map(() => '?').join(',')})`;
+      countQueryParams.push(...filters.categoryList);
+    }
+    
+    if (filters.city) {
+      countQuery += ' AND p.address LIKE ?';
+      countQueryParams.push(`%${filters.city}%`);
+    }
+    
+    if (filters.amenities && Array.isArray(filters.amenities) && filters.amenities.length > 0) {
+      countQuery += ` AND EXISTS (
+        SELECT 1 FROM property_amenities pa2 
+        WHERE pa2.property_id = p.id 
+        AND pa2.amenity IN (${filters.amenities.map(() => '?').join(',')})
+        GROUP BY pa2.property_id
+        HAVING COUNT(DISTINCT pa2.amenity) = ?
+      )`;
+      countQueryParams.push(...filters.amenities, filters.amenities.length);
+    }
+    
+    if (filters.host_id) {
+      countQuery += ' AND p.host_id = ?';
+      countQueryParams.push(filters.host_id);
+    }
+    
+    if (filters.featured === true) {
+      countQuery += ' AND p.isFeatured = 1';
+      countQueryParams.push();
+    }
+    
+    if (filters.verified === true) {
+      countQuery += ' AND p.isVerified = 1';
+      countQueryParams.push();
+    }
+    
+    console.log("COUNT QUERY (findAllActive):", countQuery);
+    console.log("COUNT PARAMS (findAllActive):", countQueryParams);
+    
+    // Ejecutar consulta de conteo
+    const [countResult] = await connection.query(countQuery, countQueryParams);
+    const totalCount = countResult[0]?.total || 0;
+    
+    connection.release();
+    
+    // Procesar y devolver resultados
+    const processedProperties = properties.map(property => ({
+      ...property,
+      // Normalizar el campo archived como booleano
+      archived: property.archived === 1 || property.archived === true,
+      amenities: property.amenities ? property.amenities.split(',') : [],
+      pets_allowed: property.pets_allowed ? property.pets_allowed.split(',') : []
+    }));
+    
+    console.log(`findAllActive devolvió ${processedProperties.length} propiedades activas de ${totalCount} totales`);
+    
+    return {
+      properties: processedProperties,
+      total: totalCount
+    };
+  } catch (error) {
+    console.error('Error finding active properties:', error);
+    throw error;
+  }
+}
   static async findAll(filters = {}, pagination = {}) {
   try {
     const connection = await mysqlPool.getConnection();
