@@ -43,7 +43,12 @@ router.delete('/:id', authenticate, PropertyController.deleteProperty);
 router.patch('/:id/archive', authenticate, PropertyController.archiveProperty);
 router.patch('/:id/restore', authenticate, PropertyController.restoreProperty);
 router.delete('/:id/soft', authenticate, PropertyController.softDeleteProperty);
-
+// Rutas para confirmar venta y renta (protegidas)
+router.patch('/:id/confirm-sale', authenticate, PropertyController.confirmSale);
+router.patch('/:id/confirm-rental', authenticate, PropertyController.confirmRental);
+router.patch('/:id/reactivate', authenticate, PropertyController.reactivateProperty);
+// Ruta para actualizar solo el estado de una propiedad (protegida)
+router.patch('/:id/status', authenticate, PropertyController.updatePropertyStatus);
 // Ruta para obtener propiedades archivadas del usuario
 router.get('/user/archived', authenticate, PropertyController.getArchivedProperties);
 

@@ -29,8 +29,9 @@ router.put('/profile', authenticate, UserController.updateProfile);
 router.put('/password', authenticate, validatePasswordChange, UserController.updatePassword);
 router.post('/profile/image', authenticate, upload.single('image'), updateProfileImage);
 
-// Rutas de favoritos
+// Rutas de favoritos - orden importante: rutas específicas antes de rutas con parámetros
 router.get('/favorites', authenticate, UserController.getFavorites);
+router.delete('/favorites/all', authenticate, UserController.clearAllFavorites); // Nueva ruta
 router.post('/favorites/:propertyId', authenticate, UserController.addFavorite);
 router.delete('/favorites/:propertyId', authenticate, UserController.removeFavorite);
 

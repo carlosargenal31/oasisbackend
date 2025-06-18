@@ -458,7 +458,30 @@ static async getHostAdditionalData(userId) {
       connection.release();
     }
   }
-  
+  static async clearAllFavorites(userId) {
+  if (!userId) {
+    throw new ValidationError('ID de usuario es requerido');
+  }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    // Eliminar todos los favoritos del usuario
+    const [result] = await connection.query(
+      'DELETE FROM favorites WHERE user_id = ?',
+      [userId]
+    );
+
+    return {
+      deletedCount: result.affectedRows,
+      success: true
+    };
+  } catch (error) {
+    console.error('Error clearing all favorites:', error);
+    throw new DatabaseError('Error al eliminar todos los favoritos');
+  } finally {
+    connection.release();
+  }
+}
   static async addFavorite(userId, propertyId) {
     if (!userId || !propertyId) {
       throw new ValidationError('ID de usuario y ID de propiedad son requeridos');

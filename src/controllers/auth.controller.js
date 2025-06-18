@@ -1,6 +1,7 @@
 // src/controllers/auth.controller.js
 import authService from '../services/auth.service.js';
 import { asyncErrorHandler } from '../utils/errors/error-handler.js';
+import { NotFoundError } from '../utils/errors/index.js';
 
 export class AuthController {
   static register = asyncErrorHandler(async (req, res) => {
@@ -51,14 +52,27 @@ export class AuthController {
   });
 
   static requestPasswordReset = asyncErrorHandler(async (req, res) => {
-    const { email } = req.body;
-    const resetToken = await authService.requestPasswordReset(email);
-    
-    res.json({
-      success: true,
-      message: 'Instrucciones de reseteo enviadas al email (simulación)',
-      resetToken // Solo para pruebas, en producción no se devolvería
-    });
+    try {
+      const { email } = req.body;
+      const resetToken = await authService.requestPasswordReset(email);
+      
+      res.json({
+        success: true,
+        message: 'Se ha generado el token de reset de contraseña',
+        resetToken // Solo para desarrollo, en producción no se devolvería
+      });
+    } catch (error) {
+      // Si es un error de "no encontrado", devolver un 404
+      if (error instanceof NotFoundError) {
+        return res.status(404).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
+      // Re-lanzar otros errores para que los maneje el error handler
+      throw error;
+    }
   });
 
   static resetPassword = asyncErrorHandler(async (req, res) => {

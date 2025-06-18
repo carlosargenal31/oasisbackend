@@ -156,7 +156,17 @@ export class UserController {
       completeness
     });
   });
+  static clearAllFavorites = asyncErrorHandler(async (req, res) => {
+  const result = await UserService.clearAllFavorites(req.userId);
   
+  res.json({
+    success: true,
+    message: `Se eliminaron ${result.deletedCount} propiedades de favoritos`,
+    data: {
+      deletedCount: result.deletedCount
+    }
+  });
+});
   static updateProfileImage = asyncErrorHandler(async (req, res) => {
     try {
       // Verificar si hay imagen en la solicitud

@@ -226,9 +226,8 @@ class AuthService {
       );
 
       if (users.length === 0) {
-        // Por seguridad, no revelar que el email no existe
-        console.info('Password reset requested for non-existent email', { email });
-        throw new NotFoundError('User not found');
+        // Lanzar error 404 para que el frontend maneje que el email no existe
+        throw new NotFoundError('No se encontró una cuenta con este email');
       }
 
       const user = users[0];
@@ -244,10 +243,18 @@ class AuthService {
         [resetToken, resetExpires, user.id]
       );
       
-      // En vez de enviar email, devolvemos el token para pruebas
+      // En producción, aquí enviarías el email con el token
+      // await emailService.sendPasswordReset(user.email, resetToken);
+      
+      // Para desarrollo, devolvemos el token
       return resetToken;
     } catch (error) {
       console.error('Password reset request failed', { error, email });
+      
+      if (error instanceof NotFoundError) {
+        throw error; // Re-lanzar el error para que el controlador lo maneje
+      }
+      
       throw new DatabaseError('Failed to process password reset request');
     }
   }
@@ -261,7 +268,7 @@ class AuthService {
       );
 
       if (credentials.length === 0) {
-        throw new ValidationError('Invalid or expired reset token');
+        throw new ValidationError('Token de reset inválido o expirado');
       }
 
       const credential = credentials[0];

@@ -3,15 +3,46 @@ import express from 'express';
 import { AuthController } from '../controllers/auth.controller.js';
 import { validateRegistrationData, validateLoginData, validatePasswordChange } from '../middleware/auth.middleware.js';
 import { authenticate } from '../middleware/auth.middleware.js';
+import { ValidationError } from '../utils/errors/index.js';
 
 const router = express.Router();
+
+// Middleware para validar datos de reset de contraseña
+const validatePasswordResetRequest = (req, res, next) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    throw new ValidationError('Email es requerido');
+  }
+  
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    throw new ValidationError('Formato de email inválido');
+  }
+  
+  next();
+};
+
+const validatePasswordReset = (req, res, next) => {
+  const { token, newPassword } = req.body;
+  
+  if (!token || !newPassword) {
+    throw new ValidationError('Token y nueva contraseña son requeridos');
+  }
+  
+  if (newPassword.length < 6) {
+    throw new ValidationError('La nueva contraseña debe tener al menos 6 caracteres');
+  }
+  
+  next();
+};
 
 // Public routes
 router.post('/register', validateRegistrationData, AuthController.register);
 router.post('/login', validateLoginData, AuthController.login);
 router.post('/logout', AuthController.logout);
-router.post('/request-reset', validateLoginData, AuthController.requestPasswordReset);
-router.post('/reset-password', validatePasswordChange, AuthController.resetPassword);
+router.post('/request-reset', validatePasswordResetRequest, AuthController.requestPasswordReset);
+router.post('/reset-password', validatePasswordReset, AuthController.resetPassword);
 
 // Protected routes
 router.get('/me', authenticate, AuthController.getCurrentUser);

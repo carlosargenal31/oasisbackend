@@ -1,4 +1,5 @@
-// src/controllers/booking.controller.js
+// src/controllers/booking.controller.js - Versión completa con los métodos nuevos
+
 import bookingService from '../services/booking.service.js';
 import { asyncErrorHandler } from '../utils/errors/index.js';
 
@@ -421,6 +422,189 @@ export class BookingController {
       res.status(500).json({
         success: false,
         message: 'Error al procesar la cancelación masiva de reservas',
+        error: process.env.NODE_ENV === 'production' ? null : error.message
+      });
+    }
+  });
+
+  /**
+   * Obtener propiedades con reservas/pagos pendientes de confirmación
+   */
+  static getPendingConfirmations = asyncErrorHandler(async (req, res) => {
+    try {
+      const userId = req.userId;
+      
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Usuario no autenticado'
+        });
+      }
+      
+      console.log('Obteniendo confirmaciones pendientes para usuario:', userId);
+      
+      // Obtener propiedades del usuario con pagos/reservas pendientes
+      const result = await bookingService.getPendingConfirmationsByHost(userId);
+      
+      res.json({
+        success: true,
+        data: {
+          propertiesWithPending: result.propertiesWithPending,
+          totalPending: result.totalPending
+        }
+      });
+    } catch (error) {
+      console.error('Error obteniendo confirmaciones pendientes:', error);
+      
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener las confirmaciones pendientes',
+        error: process.env.NODE_ENV === 'production' ? null : error.message
+      });
+    }
+  });
+// Añadir este método al BookingController existente
+
+/**
+ * Obtener propiedades con reservas confirmadas (vendidas/alquiladas)
+ */
+static getConfirmedBookings = asyncErrorHandler(async (req, res) => {
+  try {
+    const userId = req.userId;
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario no autenticado'
+      });
+    }
+    
+    console.log('Obteniendo propiedades confirmadas para usuario:', userId);
+    
+    // Obtener propiedades del usuario con reservas confirmadas
+    const result = await bookingService.getConfirmedBookingsByHost(userId);
+    
+    res.json({
+      success: true,
+      data: {
+        propertiesWithConfirmed: result.propertiesWithConfirmed,
+        totalConfirmed: result.totalConfirmed
+      }
+    });
+  } catch (error) {
+    console.error('Error obteniendo propiedades confirmadas:', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener las propiedades confirmadas',
+      error: process.env.NODE_ENV === 'production' ? null : error.message
+    });
+  }
+});
+
+/**
+ * Marcar propiedad como vendida definitivamente
+ */
+static markPropertyAsSold = asyncErrorHandler(async (req, res) => {
+  try {
+    const { propertyId } = req.params;
+    const { notes } = req.body;
+    const userId = req.userId;
+    
+    if (!propertyId) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de propiedad es requerido'
+      });
+    }
+    
+    console.log(`Marcando propiedad ${propertyId} como vendida por usuario ${userId}`);
+    
+    // Marcar la propiedad como vendida
+    const result = await bookingService.markPropertyAsSold(parseInt(propertyId), userId, { notes });
+    
+    res.json({
+      success: true,
+      data: result,
+      message: 'Propiedad marcada como vendida exitosamente'
+    });
+  } catch (error) {
+    console.error('Error marcando propiedad como vendida:', error);
+    
+    let statusCode = 500;
+    let message = 'Error al marcar la propiedad como vendida';
+    
+    if (error.name === 'ValidationError') {
+      statusCode = 400;
+      message = error.message;
+    } else if (error.name === 'NotFoundError') {
+      statusCode = 404;
+      message = 'Propiedad no encontrada';
+    } else if (error.name === 'AuthorizationError') {
+      statusCode = 403;
+      message = 'No tienes permiso para realizar esta acción';
+    }
+    
+    res.status(statusCode).json({
+      success: false,
+      message,
+      error: process.env.NODE_ENV === 'production' ? null : error.message
+    });
+  }
+});
+  /**
+   * Confirmar pago de una reserva
+   */
+  static confirmPayment = asyncErrorHandler(async (req, res) => {
+    try {
+      const { bookingId } = req.params;
+      const { action } = req.body; // 'confirm' o 'reject'
+      const userId = req.userId;
+      
+      if (!bookingId || !action) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID de reserva y acción son requeridos'
+        });
+      }
+      
+      if (!['confirm', 'reject'].includes(action)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Acción debe ser "confirm" o "reject"'
+        });
+      }
+      
+      console.log(`${action === 'confirm' ? 'Confirmando' : 'Rechazando'} pago para reserva ${bookingId}`);
+      
+      // Confirmar o rechazar el pago
+      const result = await bookingService.confirmBookingPayment(parseInt(bookingId), action, userId);
+      
+      res.json({
+        success: true,
+        data: result,
+        message: action === 'confirm' ? 'Pago confirmado exitosamente' : 'Pago rechazado exitosamente'
+      });
+    } catch (error) {
+      console.error('Error confirmando pago:', error);
+      
+      let statusCode = 500;
+      let message = 'Error al procesar la confirmación';
+      
+      if (error.name === 'ValidationError') {
+        statusCode = 400;
+        message = error.message;
+      } else if (error.name === 'NotFoundError') {
+        statusCode = 404;
+        message = 'Reserva o pago no encontrado';
+      } else if (error.name === 'AuthorizationError') {
+        statusCode = 403;
+        message = 'No tienes permiso para confirmar este pago';
+      }
+      
+      res.status(statusCode).json({
+        success: false,
+        message,
         error: process.env.NODE_ENV === 'production' ? null : error.message
       });
     }

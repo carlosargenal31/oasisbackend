@@ -67,3 +67,4 @@
 {"level":"info","message":"Booking status updated","meta":{"bookingId":33,"newStatus":"completed","oldStatus":"confirmed","updatedBy":7},"timestamp":"2025-03-26 17:58:06"}
 {"level":"info","message":"Booking status updated","meta":{"bookingId":49,"newStatus":"completed","oldStatus":"confirmed","updatedBy":7},"timestamp":"2025-03-26 18:05:21"}
 {"level":"info","message":"Booking status updated","meta":{"bookingId":50,"newStatus":"completed","oldStatus":"confirmed","updatedBy":7},"timestamp":"2025-03-26 19:13:32"}
+{"level":"info","message":"Booking status updated","meta":{"bookingId":6,"newStatus":"completed","oldStatus":"pending","updatedBy":4},"timestamp":"2025-06-10 20:29:16"}
