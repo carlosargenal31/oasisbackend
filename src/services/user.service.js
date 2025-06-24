@@ -481,6 +481,71 @@ static async getHostAdditionalData(userId) {
   } finally {
     connection.release();
   }
+
+}
+// En user.service.js, agregar este método
+static async updateSecurityQuestion(userId, newQuestion, newAnswer, currentAnswer) {
+  if (!userId || !newQuestion || !newAnswer || !currentAnswer) {
+    throw new ValidationError('Todos los campos son requeridos');
+  }
+
+  const connection = await mysqlPool.getConnection();
+  try {
+    // Obtener la respuesta actual del usuario
+    const [users] = await connection.query(
+      'SELECT security_answer FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      throw new NotFoundError('Usuario no encontrado');
+    }
+
+    const user = users[0];
+    
+    // Verificar la respuesta actual usando bcrypt
+    const bcrypt = require('bcryptjs');
+    const isCurrentAnswerValid = await bcrypt.compare(
+      currentAnswer.toLowerCase().trim(), 
+      user.security_answer
+    );
+
+    if (!isCurrentAnswerValid) {
+      return {
+        success: false,
+        message: 'La respuesta de seguridad actual es incorrecta'
+      };
+    }
+
+    // Hash de la nueva respuesta
+    const hashedNewAnswer = await bcrypt.hash(newAnswer.toLowerCase().trim(), 10);
+
+    // Actualizar la pregunta y respuesta de seguridad
+    const [result] = await connection.query(
+      'UPDATE users SET security_question = ?, security_answer = ? WHERE id = ?',
+      [newQuestion, hashedNewAnswer, userId]
+    );
+
+    if (result.affectedRows > 0) {
+      return {
+        success: true,
+        message: 'Pregunta de seguridad actualizada correctamente'
+      };
+    } else {
+      return {
+        success: false,
+        message: 'No se pudo actualizar la pregunta de seguridad'
+      };
+    }
+  } catch (error) {
+    console.error('Error updating security question:', error);
+    if (error instanceof ValidationError || error instanceof NotFoundError) {
+      throw error;
+    }
+    throw new DatabaseError('Error al actualizar la pregunta de seguridad');
+  } finally {
+    connection.release();
+  }
 }
   static async addFavorite(userId, propertyId) {
     if (!userId || !propertyId) {

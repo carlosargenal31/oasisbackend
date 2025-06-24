@@ -83,4 +83,35 @@ export class AuthController {
       message: 'Contraseña reseteada exitosamente'
     });
   });
+
+  static getUserSecurityInfo = asyncErrorHandler(async (req, res) => {
+    try {
+      const { email } = req.body;
+      const securityInfo = await authService.getUserSecurityInfo(email);
+      
+      res.json({
+        success: true,
+        data: securityInfo
+      });
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        return res.status(404).json({
+          success: false,
+          message: error.message
+        });
+      }
+      throw error;
+    }
+  });
+
+  static verifySecurityAnswers = asyncErrorHandler(async (req, res) => {
+    const { email, answers } = req.body;
+    const resetToken = await authService.verifySecurityAnswers(email, answers);
+    
+    res.json({
+      success: true,
+      message: 'Verificación exitosa',
+      resetToken
+    });
+  });
 }

@@ -21,6 +21,8 @@ export const createUserTable = async () => {
       social_twitter VARCHAR(255),
       social_instagram VARCHAR(255),
       social_pinterest VARCHAR(255),
+      security_question VARCHAR(255),
+      security_answer VARCHAR(255),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
@@ -60,11 +62,96 @@ export class User {
       }
       
       // Remover datos sensibles
-      const { password, refresh_token, ...userWithoutSensitiveData } = users[0];
+      const { password, refresh_token, security_answer, ...userWithoutSensitiveData } = users[0];
       
       return userWithoutSensitiveData;
     } catch (error) {
       console.error('Error finding user by ID:', error);
+      throw error;
+    }
+  }
+  
+  // Encontrar usuario por email para verificación de seguridad
+  static async findByEmailWithSecurity(email) {
+    if (!email) {
+      throw new Error('Email es requerido');
+    }
+
+    try {
+      const connection = await mysqlPool.getConnection();
+      
+      const [users] = await connection.query(
+        'SELECT id, first_name, last_name, email, phone, security_question, created_at FROM users WHERE email = ?',
+        [email]
+      );
+      
+      connection.release();
+      
+      if (users.length === 0) {
+        return null;
+      }
+      
+      return users[0];
+    } catch (error) {
+      console.error('Error finding user by email:', error);
+      throw error;
+    }
+  }
+  
+  // Verificar respuestas de seguridad
+  static async verifySecurityAnswers(email, answers) {
+    if (!email || !answers) {
+      throw new Error('Email y respuestas son requeridos');
+    }
+
+    try {
+      const connection = await mysqlPool.getConnection();
+      
+      const [users] = await connection.query(
+        'SELECT id, first_name, last_name, phone, security_question, security_answer, created_at FROM users WHERE email = ?',
+        [email]
+      );
+      
+      connection.release();
+      
+      if (users.length === 0) {
+        return { valid: false, reason: 'Usuario no encontrado' };
+      }
+      
+      const user = users[0];
+      
+      // Verificar nombre completo (case insensitive)
+      const expectedFullName = `${user.first_name} ${user.last_name}`.toLowerCase().trim();
+      const providedFullName = answers.fullName.toLowerCase().trim();
+      
+      if (expectedFullName !== providedFullName) {
+        return { valid: false, reason: 'Nombre completo incorrecto' };
+      }
+      
+      // Verificar teléfono si aplica (últimos 4 dígitos)
+      if (user.phone && answers.phoneDigits) {
+        const phoneDigits = user.phone.replace(/\D/g, '').slice(-4);
+        if (phoneDigits !== answers.phoneDigits) {
+          return { valid: false, reason: 'Últimos 4 dígitos del teléfono incorrectos' };
+        }
+      }
+      
+      // Verificar respuesta de seguridad (case insensitive)
+      if (user.security_answer.toLowerCase().trim() !== answers.securityAnswer.toLowerCase().trim()) {
+        return { valid: false, reason: 'Respuesta de seguridad incorrecta' };
+      }
+      
+      // Verificar año de creación (permitir un rango de ±1 año por si hay confusión)
+      const creationYear = new Date(user.created_at).getFullYear();
+      const providedYear = parseInt(answers.creationYear);
+      
+      if (Math.abs(creationYear - providedYear) > 1) {
+        return { valid: false, reason: 'Año de creación de cuenta incorrecto' };
+      }
+      
+      return { valid: true, userId: user.id };
+    } catch (error) {
+      console.error('Error verifying security answers:', error);
       throw error;
     }
   }

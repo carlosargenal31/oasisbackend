@@ -37,28 +37,33 @@ class AuthService {
       );
       
       if (existingUsers.length > 0) {
-        throw new ValidationError('Email is already registered');
+        throw new ValidationError('Email ya está registrado');
       }
   
       // Hash password before storing
       const hashedPassword = await bcrypt.hash(userData.password, 10);
+      
+      // Hash security answer before storing
+      const hashedSecurityAnswer = await bcrypt.hash(userData.security_answer.toLowerCase().trim(), 10);
   
       // Start transaction
       const connection = await mysqlPool.getConnection();
       await connection.beginTransaction();
   
       try {
-        // Create user
+        // Create user with all new fields
         const [userResult] = await connection.query(
           `INSERT INTO users 
-           (first_name, last_name, email, phone, status, created_at, updated_at) 
-           VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
+           (first_name, last_name, email, phone, status, security_question, security_answer, created_at, updated_at) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
           [
             userData.first_name,
             userData.last_name,
             userData.email,
-            userData.phone || null,
-            'active'
+            userData.phone,
+            'active',
+            userData.security_question,
+            hashedSecurityAnswer
           ]
         );
   
@@ -72,9 +77,10 @@ class AuthService {
           [userId, hashedPassword]
         );
   
-        // Fetch created user
+        // Fetch created user (without sensitive data)
         const [users] = await connection.query(
-          'SELECT * FROM users WHERE id = ?',
+          `SELECT id, first_name, last_name, email, phone, status, security_question, created_at, updated_at 
+           FROM users WHERE id = ?`,
           [userId]
         );
   
@@ -83,9 +89,6 @@ class AuthService {
         connection.release();
   
         const newUser = users[0];
-        
-        // Remove sensitive data before returning
-        delete newUser.password;
         
         return newUser;
       } catch (error) {
@@ -217,45 +220,104 @@ class AuthService {
     }
   }
 
-  async requestPasswordReset(email) {
+  async getUserSecurityInfo(email) {
     try {
       // Find user by email
       const [users] = await mysqlPool.query(
-        'SELECT * FROM users WHERE email = ?',
+        'SELECT id, first_name, last_name, phone, security_question, created_at FROM users WHERE email = ?',
         [email]
       );
 
       if (users.length === 0) {
-        // Lanzar error 404 para que el frontend maneje que el email no existe
         throw new NotFoundError('No se encontró una cuenta con este email');
       }
 
       const user = users[0];
 
-      // Generate reset token
+      return {
+        hasPhone: !!user.phone,
+        securityQuestion: user.security_question,
+        accountCreated: new Date(user.created_at).getFullYear().toString()
+      };
+    } catch (error) {
+      console.error('Get user security info failed', { error, email });
+      
+      if (error instanceof NotFoundError) {
+        throw error;
+      }
+      
+      throw new DatabaseError('Failed to get user security info');
+    }
+  }
+
+  async verifySecurityAnswers(email, answers) {
+    try {
+      // Find user by email
+      const [users] = await mysqlPool.query(
+        'SELECT id, first_name, last_name, phone, security_question, security_answer, created_at FROM users WHERE email = ?',
+        [email]
+      );
+
+      if (users.length === 0) {
+        throw new NotFoundError('Usuario no encontrado');
+      }
+
+      const user = users[0];
+      
+      // Verificar nombre completo (case insensitive)
+      const expectedFullName = `${user.first_name} ${user.last_name}`.toLowerCase().trim();
+      const providedFullName = answers.fullName.toLowerCase().trim();
+      
+      if (expectedFullName !== providedFullName) {
+        throw new ValidationError('Las respuestas de seguridad no coinciden con nuestros registros');
+      }
+      
+      // Verificar teléfono si aplica (últimos 4 dígitos)
+      if (user.phone && answers.phoneDigits) {
+        const phoneDigits = user.phone.replace(/\D/g, '').slice(-4);
+        if (phoneDigits !== answers.phoneDigits) {
+          throw new ValidationError('Las respuestas de seguridad no coinciden con nuestros registros');
+        }
+      }
+      
+      // Verificar respuesta de seguridad usando bcrypt
+      const isSecurityAnswerValid = await bcrypt.compare(
+        answers.securityAnswer.toLowerCase().trim(), 
+        user.security_answer
+      );
+      
+      if (!isSecurityAnswerValid) {
+        throw new ValidationError('Las respuestas de seguridad no coinciden con nuestros registros');
+      }
+      
+      // Verificar año de creación (permitir un rango de ±1 año)
+      const creationYear = new Date(user.created_at).getFullYear();
+      const providedYear = parseInt(answers.creationYear);
+      
+      if (Math.abs(creationYear - providedYear) > 1) {
+        throw new ValidationError('Las respuestas de seguridad no coinciden con nuestros registros');
+      }
+      
+      // Generar token de reset válido
       const resetToken = crypto.randomBytes(32).toString('hex');
       const resetExpires = new Date();
-      resetExpires.setHours(resetExpires.getHours() + 1); // Token valid for 1 hour
+      resetExpires.setHours(resetExpires.getHours() + 1); // Token válido por 1 hora
 
-      // Store reset token in database
+      // Guardar token de reset en la base de datos
       await mysqlPool.query(
         'UPDATE auth_credentials SET reset_token = ?, reset_token_expires = ? WHERE user_id = ?',
         [resetToken, resetExpires, user.id]
       );
       
-      // En producción, aquí enviarías el email con el token
-      // await emailService.sendPasswordReset(user.email, resetToken);
-      
-      // Para desarrollo, devolvemos el token
       return resetToken;
     } catch (error) {
-      console.error('Password reset request failed', { error, email });
+      console.error('Verify security answers failed', { error, email });
       
-      if (error instanceof NotFoundError) {
-        throw error; // Re-lanzar el error para que el controlador lo maneje
+      if (error instanceof NotFoundError || error instanceof ValidationError) {
+        throw error;
       }
       
-      throw new DatabaseError('Failed to process password reset request');
+      throw new DatabaseError('Failed to verify security answers');
     }
   }
 

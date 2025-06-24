@@ -34,7 +34,44 @@ export class UserController {
       }
     });
   });
+// En user.controller.js, agregar este método
+static updateSecurityQuestion = asyncErrorHandler(async (req, res) => {
+  const { security_question, security_answer, current_security_answer } = req.body;
+  
+  if (!security_question || !security_answer || !current_security_answer) {
+    return res.status(400).json({
+      success: false,
+      message: 'Pregunta de seguridad, respuesta nueva y respuesta actual son requeridas'
+    });
+  }
 
+  try {
+    const result = await UserService.updateSecurityQuestion(
+      req.userId, 
+      security_question, 
+      security_answer, 
+      current_security_answer
+    );
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Pregunta de seguridad actualizada exitosamente'
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: result.message || 'No se pudo actualizar la pregunta de seguridad'
+      });
+    }
+  } catch (error) {
+    console.error('Error updating security question:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor'
+    });
+  }
+});
   // Actualizar getUser para incluir información más detallada para anfitriones
   static getUser = asyncErrorHandler(async (req, res) => {
     const user = await UserService.getUserById(req.params.id);

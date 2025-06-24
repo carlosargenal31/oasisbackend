@@ -34,7 +34,8 @@ router.get('/favorites', authenticate, UserController.getFavorites);
 router.delete('/favorites/all', authenticate, UserController.clearAllFavorites); // Nueva ruta
 router.post('/favorites/:propertyId', authenticate, UserController.addFavorite);
 router.delete('/favorites/:propertyId', authenticate, UserController.removeFavorite);
-
+// En user.routes.js, agregar esta ruta después de las rutas existentes
+router.put('/security-question', authenticate, UserController.updateSecurityQuestion);
 // Rutas generales de usuario - deben estar después para que no capturen /profile como :id
 router.get('/:id', authenticate, UserController.getUser);
 router.put('/:id', authenticate, validateUserData, UserController.updateUser);
